@@ -94,6 +94,14 @@ be updated together, or Option A installs above break:
 3. `gh release create v<version> <zip>` and note the asset's download URL.
 4. In `manifest.json`, append a new entry to `versions` with that `sourceUrl`, the new
    `version`, and the zip's MD5 (`md5sum <zip>`) as `checksum`.
+5. Add a line to Revision History below.
+
+## Revision History
+
+| Version | Date | Notes |
+|---|---|---|
+| 1.0.1.0 | 2026-09-12 | Version bump only, no code changes. |
+| 1.0.0.0 | 2026-09-12 | Initial public release. |
 
 ## Known follow-ups (not yet built)
 
