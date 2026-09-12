@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Match TargetFramework to your server's runtime. Jellyfin 12.0.x runs on
+         .NET 10, so this plugin targets net10.0. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Jellyfin.Plugin.ComskipSegments</RootNamespace>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pinned to the running Jellyfin server version (Dashboard -> About:
+         "Jellyfin.Server 12.0.0.0", Debian package jellyfin-server 12.0+ubu2404).
+         A version mismatch is the usual cause of load failures. -->
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" />
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0" />
+  </ItemGroup>
+
+  <!-- Needed for Microsoft.AspNetCore.Mvc (ControllerBase, [ApiController], etc.) used by
+       Web/ComskipWebAssetsController.cs. Jellyfin.Controller doesn't pull this in on its
+       own; the server's own shared framework provides it at run time, this just makes it
+       resolvable at build time. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="Web\overlay.js" />
+    <EmbeddedResource Include="Web\overlay.css" />
+    <EmbeddedResource Include="Web\itemmenu.js" />
+  </ItemGroup>
+
+  <!-- Not embedded resources: meta.json's "imagePath" points the dashboard at icon.png
+       as a plain file living next to the DLL in the plugin's install folder (see
+       Plugin.cs for why — IHasEmbeddedImage doesn't work for a side-loaded plugin). -->
+  <ItemGroup>
+    <None Include="icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="meta.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

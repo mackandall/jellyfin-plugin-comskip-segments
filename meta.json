@@ -1,0 +1,16 @@
+{
+  "category": "Live TV",
+  "changelog": "",
+  "description": "Detects commercials in DVR recordings (and optionally existing library files) with Comskip and exposes them as native Jellyfin skip segments.",
+  "guid": "e8f9a7c2-4b3d-4e1a-9c6f-2a1b0c3d4e5f",
+  "name": "Comskip Commercial Segments",
+  "overview": "",
+  "owner": "",
+  "targetAbi": "12.0.0.0",
+  "timestamp": "0001-01-01T00:00:00.0000000Z",
+  "version": "1.0.0.0",
+  "status": "Active",
+  "autoUpdate": false,
+  "imagePath": "icon.png",
+  "assemblies": []
+}

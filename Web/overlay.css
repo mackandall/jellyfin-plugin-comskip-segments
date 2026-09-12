@@ -1,0 +1,36 @@
+/*
+ * Comskip Commercial Segments — web-player overlay styling.
+ * Companion to overlay.js. Self-sufficient positioning (doesn't assume Jellyfin's own
+ * CSS already makes .sliderMarkerContainer absolutely positioned) so it degrades safely
+ * across jellyfin-web versions.
+ */
+
+.videoOsdBottom .sliderContainer {
+  position: relative;
+}
+
+.videoOsdBottom .sliderMarkerContainer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.comskip-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(229, 57, 53, 0.55);
+  border-left: 1px solid rgba(255, 255, 255, 0.45);
+  border-right: 1px solid rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 2;
+  transition: background-color 0.15s ease;
+}
+
+.comskip-marker:hover {
+  background: rgba(229, 57, 53, 0.85);
+}

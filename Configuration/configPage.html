@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Comskip Commercial Segments</title>
+</head>
+<body>
+<div id="ComskipSegmentsConfigPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="ComskipSegmentsConfigForm">
+
+                <div class="verticalSection">
+                    <h2>Comskip paths</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ComskipPath">Comskip binary path</label>
+                        <input id="ComskipPath" name="ComskipPath" type="text" is="emby-input" />
+                        <div class="fieldDescription">Absolute path to the comskip executable, e.g. /var/lib/jellyfin/comskip/comskip</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ComskipIniPath">comskip.ini path</label>
+                        <input id="ComskipIniPath" name="ComskipIniPath" type="text" is="emby-input" />
+                        <div class="fieldDescription">e.g. /var/lib/jellyfin/comskip/comskip.ini</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="WorkDirectory">Work directory</label>
+                        <input id="WorkDirectory" name="WorkDirectory" type="text" is="emby-input" />
+                        <div class="fieldDescription">Where Comskip writes its output. Must be writable by the Jellyfin service account, e.g. /var/lib/jellyfin/comskip/work</div>
+                    </div>
+
+                    <button id="ValidateBtn" type="button" is="emby-button" class="raised block">
+                        <span>Test paths (as the Jellyfin service account)</span>
+                    </button>
+                    <div id="ValidateResult" class="fieldDescription" style="margin-top:0.5em;white-space:pre-line;"></div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>DVR recordings</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RecordingsPath">Recordings folder</label>
+                        <input id="RecordingsPath" name="RecordingsPath" type="text" is="emby-input" />
+                        <div class="fieldDescription">New items under this folder are auto-detected as recordings.</div>
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input id="ProcessRecordingsAutomatically" name="ProcessRecordingsAutomatically" type="checkbox" is="emby-checkbox" />
+                        <span>Watch for new recordings and detect commercials as they finish</span>
+                    </label>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>Automatic detection</h2>
+
+                    <label class="checkboxContainer">
+                        <input id="EnableBackstopScan" name="EnableBackstopScan" type="checkbox" is="emby-checkbox" />
+                        <span>Run a periodic backstop scan</span>
+                    </label>
+                    <div class="fieldDescription" style="margin-bottom:1em;">Safety net that re-checks the library on an interval and queues anything the recording watcher missed. You can still run the "Scan library for commercials (Comskip)" task by hand when this is off.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AutoScanIntervalHours">Backstop scan interval (hours)</label>
+                        <input id="AutoScanIntervalHours" name="AutoScanIntervalHours" type="number" min="0" step="0.5" is="emby-input" />
+                        <div class="fieldDescription">How often that scan runs. Changing this takes effect after a server restart or after resetting the task's triggers in Scheduled Tasks.</div>
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input id="EnableMediaSegmentScanEnqueue" name="EnableMediaSegmentScanEnqueue" type="checkbox" is="emby-checkbox" />
+                        <span>Also detect during Jellyfin's own Media Segment Scan</span>
+                    </label>
+                    <div class="fieldDescription">When Jellyfin asks this plugin for segments during its Media Segment Scan, queue detection for items that don't have results yet. Turn off to keep detection strictly on the watcher + backstop scan.</div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>Show / folder filter</h2>
+                    <div class="fieldDescription" style="margin-bottom:1em;">Limit which recordings automatic detection runs on. Each line is matched against the series name, the file name, and every folder in the path. <code>*</code> and <code>?</code> wildcards work; a line with no wildcard must match in full (case-insensitive). Manual runs of the scan task ignore these lists.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeriesAllowList">Allow-list</label>
+                        <textarea id="SeriesAllowList" name="SeriesAllowList" rows="4" class="emby-input"></textarea>
+                        <div class="fieldDescription">If non-empty, ONLY matching items are detected. Leave blank to allow everything.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeriesBlockList">Block-list</label>
+                        <textarea id="SeriesBlockList" name="SeriesBlockList" rows="4" class="emby-input"></textarea>
+                        <div class="fieldDescription">Matching items are never auto-detected. Applied after the allow-list.</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>Channel filter</h2>
+                    <div class="fieldDescription" style="margin-bottom:1em;">Limit which DVR channels automatic detection runs on. The channel is captured by polling Jellyfin every 20 seconds for whatever is currently recording (the only way to catch it — it's gone from Jellyfin once a recording finishes). For anything recorded before this was turned on, it falls back to a by-name lookup against the recently-aired program guide, which works in a normal broadcast lineup but returns nothing (treated as unknown, which an allow-list rejects) for a show with no recent guide coverage. Skipped entirely when both lists below are empty. Each line is matched against the channel name and the channel number; <code>*</code>/<code>?</code> wildcards work the same as the show/folder filter above.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ChannelAllowList">Allow-list</label>
+                        <textarea id="ChannelAllowList" name="ChannelAllowList" rows="3" class="emby-input"></textarea>
+                        <div class="fieldDescription">If non-empty, ONLY recordings from a matching channel are detected. Leave blank to allow every channel.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ChannelBlockList">Block-list</label>
+                        <textarea id="ChannelBlockList" name="ChannelBlockList" rows="3" class="emby-input"></textarea>
+                        <div class="fieldDescription">Recordings from a matching channel are never auto-detected. Applied after the channel allow-list. Typical use: exclude commercial-free premium movie channels Comskip has nothing to find on, e.g. <code>HBO East</code>, <code>Showtime</code>, <code>Cinemax</code>.</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>Manual re-detect</h2>
+                    <div class="fieldDescription" style="margin-bottom:1em;">Run (or force re-run) detection for one item by ID. Find the ID in the item's URL in Jellyfin web (the <code>id=</code> query parameter on its details page). A forced run ignores the show/channel filters and any existing result, and clears currently-published segments before it starts.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DetectItemId">Item ID</label>
+                        <input id="DetectItemId" name="DetectItemId" type="text" is="emby-input" placeholder="e.g. 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d" />
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input id="DetectForce" name="DetectForce" type="checkbox" is="emby-checkbox" checked />
+                        <span>Force (ignore filters and existing results)</span>
+                    </label>
+
+                    <button id="DetectBtn" type="button" is="emby-button" class="raised block" style="margin-top:0.5em;">
+                        <span>Run detection</span>
+                    </button>
+                    <button id="DetectStatusBtn" type="button" is="emby-button" class="raised block">
+                        <span>Check status</span>
+                    </button>
+                    <div id="DetectResult" class="fieldDescription" style="margin-top:0.5em;white-space:pre-line;"></div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>Existing library (optional)</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ScanPaths">Extra scan folders</label>
+                        <textarea id="ScanPaths" name="ScanPaths" rows="3" class="emby-input"></textarea>
+                        <div class="fieldDescription">One absolute path per line. Included when you run the "Scan library for commercials" scheduled task. Keep this to broadcast-sourced content only.</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2>Detection tuning</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxConcurrentJobs">Max concurrent jobs</label>
+                        <input id="MaxConcurrentJobs" name="MaxConcurrentJobs" type="number" min="1" max="8" is="emby-input" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PerFileTimeoutMinutes">Per-file timeout (minutes)</label>
+                        <input id="PerFileTimeoutMinutes" name="PerFileTimeoutMinutes" type="number" min="1" max="600" is="emby-input" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PaddingSeconds">Break padding (seconds)</label>
+                        <input id="PaddingSeconds" name="PaddingSeconds" type="number" step="0.1" is="emby-input" />
+                        <div class="fieldDescription">Trimmed from each end of every break so the skip doesn't clip the show. 0 = exact.</div>
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input id="CleanupWorkFiles" name="CleanupWorkFiles" type="checkbox" is="emby-checkbox" />
+                        <span>Delete Comskip output files after parsing</span>
+                    </label>
+
+                    <label class="checkboxContainer">
+                        <input id="PlaceEdlBesideRecording" name="PlaceEdlBesideRecording" type="checkbox" is="emby-checkbox" />
+                        <span>Also place a copy of the .edl next to the recording</span>
+                    </label>
+                    <div class="fieldDescription">For other software pointed at the recordings folder that expects a sibling .edl file (e.g. comchap/comcut-style tools). Independent of the setting above, which only affects the working copy in the work directory.</div>
+                </div>
+
+                <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                    <span>Save</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginUniqueId = "e8f9a7c2-4b3d-4e1a-9c6f-2a1b0c3d4e5f";
+
+            function load(page, config) {
+                page.querySelector("#ComskipPath").value = config.ComskipPath || "";
+                page.querySelector("#ComskipIniPath").value = config.ComskipIniPath || "";
+                page.querySelector("#WorkDirectory").value = config.WorkDirectory || "";
+                page.querySelector("#RecordingsPath").value = config.RecordingsPath || "";
+                page.querySelector("#ProcessRecordingsAutomatically").checked = !!config.ProcessRecordingsAutomatically;
+                page.querySelector("#EnableBackstopScan").checked = config.EnableBackstopScan !== false;
+                page.querySelector("#AutoScanIntervalHours").value = config.AutoScanIntervalHours != null ? config.AutoScanIntervalHours : 6;
+                page.querySelector("#EnableMediaSegmentScanEnqueue").checked = config.EnableMediaSegmentScanEnqueue !== false;
+                page.querySelector("#SeriesAllowList").value = config.SeriesAllowList || "";
+                page.querySelector("#SeriesBlockList").value = config.SeriesBlockList || "";
+                page.querySelector("#ChannelAllowList").value = config.ChannelAllowList || "";
+                page.querySelector("#ChannelBlockList").value = config.ChannelBlockList || "";
+                page.querySelector("#ScanPaths").value = config.ScanPaths || "";
+                page.querySelector("#MaxConcurrentJobs").value = config.MaxConcurrentJobs || 1;
+                page.querySelector("#PerFileTimeoutMinutes").value = config.PerFileTimeoutMinutes || 30;
+                page.querySelector("#PaddingSeconds").value = config.PaddingSeconds || 0;
+                page.querySelector("#CleanupWorkFiles").checked = !!config.CleanupWorkFiles;
+                page.querySelector("#PlaceEdlBesideRecording").checked = !!config.PlaceEdlBesideRecording;
+            }
+
+            document.querySelector("#ComskipSegmentsConfigPage")
+                .addEventListener("pageshow", function () {
+                    var page = this;
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
+                        load(page, config);
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector("#ValidateBtn").addEventListener("click", function () {
+                var page = document.querySelector("#ComskipSegmentsConfigPage");
+                var body = {
+                    ComskipPath: page.querySelector("#ComskipPath").value,
+                    ComskipIniPath: page.querySelector("#ComskipIniPath").value,
+                    WorkDirectory: page.querySelector("#WorkDirectory").value
+                };
+                var out = page.querySelector("#ValidateResult");
+                out.textContent = "Checking...";
+                ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl("ComskipSegments/Validate"),
+                    data: JSON.stringify(body),
+                    contentType: "application/json",
+                    dataType: "json"
+                }).then(function (r) {
+                    var mark = function (c) { return (c.Ok ? "OK  " : "FAIL ") + c.Message; };
+                    out.textContent =
+                        "Binary:   " + mark(r.Binary) + "\n" +
+                        "Ini:      " + mark(r.Ini) + "\n" +
+                        "Work dir: " + mark(r.WorkDir);
+                }).catch(function () {
+                    out.textContent = "Validation request failed.";
+                });
+            });
+
+            function currentItemId() {
+                return (document.querySelector("#DetectItemId").value || "").trim();
+            }
+
+            document.querySelector("#DetectBtn").addEventListener("click", function () {
+                var itemId = currentItemId();
+                var out = document.querySelector("#DetectResult");
+                if (!itemId) {
+                    out.textContent = "Enter an item ID first.";
+                    return;
+                }
+                var force = document.querySelector("#DetectForce").checked;
+                out.textContent = "Queuing...";
+                ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl("ComskipSegments/Detect/" + itemId, { force: force }),
+                    dataType: "json"
+                }).then(function (r) {
+                    out.textContent = r.Message || "Queued.";
+                }).catch(function (e) {
+                    out.textContent = "Request failed (bad item ID, or item has no file on disk).";
+                });
+            });
+
+            document.querySelector("#DetectStatusBtn").addEventListener("click", function () {
+                var itemId = currentItemId();
+                var out = document.querySelector("#DetectResult");
+                if (!itemId) {
+                    out.textContent = "Enter an item ID first.";
+                    return;
+                }
+                ApiClient.ajax({
+                    type: "GET",
+                    url: ApiClient.getUrl("ComskipSegments/Status/" + itemId),
+                    dataType: "json"
+                }).then(function (r) {
+                    var lines = [];
+                    lines.push("In flight: " + (r.InFlight ? "yes (queued or running)" : "no"));
+                    lines.push("Last result: " + (r.Status || "none yet"));
+                    if (r.BreakCount != null) {
+                        lines.push("Breaks: " + r.BreakCount);
+                    }
+                    if (r.UpdatedUtc) {
+                        lines.push("Updated: " + new Date(r.UpdatedUtc).toLocaleString());
+                    }
+                    out.textContent = lines.join("\n");
+                }).catch(function () {
+                    out.textContent = "Status request failed.";
+                });
+            });
+
+            document.querySelector("#ComskipSegmentsConfigForm")
+                .addEventListener("submit", function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    var page = document.querySelector("#ComskipSegmentsConfigPage");
+                    ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
+                        config.ComskipPath = page.querySelector("#ComskipPath").value;
+                        config.ComskipIniPath = page.querySelector("#ComskipIniPath").value;
+                        config.WorkDirectory = page.querySelector("#WorkDirectory").value;
+                        config.RecordingsPath = page.querySelector("#RecordingsPath").value;
+                        config.ProcessRecordingsAutomatically = page.querySelector("#ProcessRecordingsAutomatically").checked;
+                        config.EnableBackstopScan = page.querySelector("#EnableBackstopScan").checked;
+                        var autoScan = parseFloat(page.querySelector("#AutoScanIntervalHours").value);
+                        config.AutoScanIntervalHours = isNaN(autoScan) || autoScan < 0 ? 0 : autoScan;
+                        config.EnableMediaSegmentScanEnqueue = page.querySelector("#EnableMediaSegmentScanEnqueue").checked;
+                        config.SeriesAllowList = page.querySelector("#SeriesAllowList").value;
+                        config.SeriesBlockList = page.querySelector("#SeriesBlockList").value;
+                        config.ChannelAllowList = page.querySelector("#ChannelAllowList").value;
+                        config.ChannelBlockList = page.querySelector("#ChannelBlockList").value;
+                        config.ScanPaths = page.querySelector("#ScanPaths").value;
+                        config.MaxConcurrentJobs = parseInt(page.querySelector("#MaxConcurrentJobs").value, 10) || 1;
+                        config.PerFileTimeoutMinutes = parseInt(page.querySelector("#PerFileTimeoutMinutes").value, 10) || 30;
+                        config.PaddingSeconds = parseFloat(page.querySelector("#PaddingSeconds").value) || 0;
+                        config.CleanupWorkFiles = page.querySelector("#CleanupWorkFiles").checked;
+                        config.PlaceEdlBesideRecording = page.querySelector("#PlaceEdlBesideRecording").checked;
+
+                        ApiClient.updatePluginConfiguration(pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    return false;
+                });
+        })();
+    </script>
+</div>
+</body>
+</html>
