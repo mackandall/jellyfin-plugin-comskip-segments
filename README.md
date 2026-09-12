@@ -75,6 +75,17 @@ Everything else is plain .NET.
 - Optional remux/cut path if you ever want removal rather than skip markers.
 - Retry backoff/scheduling for `Failed` items.
 
+## Repo metadata
+
+GitHub's description and topics aren't stored in this repo, so they drift silently
+after a rename/fork. Current canonical values, kept here so they can be diffed against
+reality (`gh repo view --json description,repositoryTopics`):
+
+- **Description:** Detect commercials in Jellyfin DVR recordings with Comskip and
+  expose them as native MediaSegments
+- **Topics:** `jellyfin`, `jellyfin-plugin`, `comskip`, `dvr`, `commercial-detection`,
+  `media-segments`, `livetv`
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
