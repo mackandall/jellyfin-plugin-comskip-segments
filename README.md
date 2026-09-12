@@ -38,6 +38,17 @@ The build output DLL is `Jellyfin.Plugin.ComskipSegments.dll` under
 
 ## Install
 
+### Option A: via a plugin repository (no build needed)
+
+1. Dashboard → Plugins → **Repositories** → add:
+   ```
+   https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/manifest.json
+   ```
+2. Dashboard → Plugins → **Catalog** → **Comskip Commercial Segments** → Install.
+3. Restart Jellyfin.
+
+### Option B: build and install manually
+
 1. Find your Jellyfin plugins folder. On a Linux package install it's typically
    `/var/lib/jellyfin/plugins`, owned by the `jellyfin` service account — installing
    requires `sudo` (or write access as that user).
@@ -47,9 +58,12 @@ The build output DLL is `Jellyfin.Plugin.ComskipSegments.dll` under
    sudo cp bin/Release/net10.0/Jellyfin.Plugin.ComskipSegments.dll icon.png meta.json /var/lib/jellyfin/plugins/ComskipSegments/
    ```
 3. Restart Jellyfin.
-4. Dashboard → Plugins → **Comskip Commercial Segments** → set the paths → click
-   **Test paths**. This checks them *as the service account*, which catches the
-   `/home` traversal and systemd-sandbox (`ProtectHome`) cases the browser can't see.
+
+### Either way
+
+Dashboard → Plugins → **Comskip Commercial Segments** → set the paths → click
+**Test paths**. This checks them *as the service account*, which catches the
+`/home` traversal and systemd-sandbox (`ProtectHome`) cases the browser can't see.
 
 ## Use
 
@@ -67,6 +81,19 @@ preferences — this plugin only supplies the segments.
 media-segment API. If it doesn't compile against your server, match its three members to
 `MediaBrowser.Controller/MediaSegments/IMediaSegmentProvider.cs` at your server's tag.
 Everything else is plain .NET.
+
+## Cutting a release
+
+The repository manifest (`manifest.json`) and the GitHub Release it points to have to
+be updated together, or Option A installs above break:
+
+1. Bump `AssemblyVersion`/`FileVersion` in the `.csproj`, `dotnet build -c Release`.
+2. Zip just the DLL + `icon.png` (not `meta.json` — the server writes its own from the
+   manifest on a repository install) as
+   `jellyfin-plugin-comskip-segments_<version>.zip`.
+3. `gh release create v<version> <zip>` and note the asset's download URL.
+4. In `manifest.json`, append a new entry to `versions` with that `sourceUrl`, the new
+   `version`, and the zip's MD5 (`md5sum <zip>`) as `checksum`.
 
 ## Known follow-ups (not yet built)
 
