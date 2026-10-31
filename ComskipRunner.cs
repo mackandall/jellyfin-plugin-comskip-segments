@@ -49,6 +49,7 @@ public sealed class ComskipRunner
         mediaPath = mediaPath?.Trim() ?? string.Empty;
 
         Directory.CreateDirectory(workDir);
+        ClearOldOutput(workDir, mediaPath, _logger);
 
         var psi = new ProcessStartInfo
         {
@@ -118,6 +119,32 @@ public sealed class ComskipRunner
 
         _logger.LogDebug("Comskip finished for {Media} (exit code {ExitCode})", mediaPath, exitCode);
         return new ComskipRunResult(ComskipOutcome.Ran, edlPath, log.ToString());
+    }
+
+    /// <summary>
+    /// Deletes an earlier scan's output for this recording name from the work folder (a past
+    /// recording of the same episode, kept when "delete clutter" is off), so it's never read
+    /// as this scan's result: Comskip writes no .edl until it finds a break, or at all if it fails.
+    /// </summary>
+    internal static void ClearOldOutput(string workDir, string mediaPath, ILogger logger)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(mediaPath);
+        foreach (var ext in new[] { ".edl", ".txt" })
+        {
+            var f = Path.Combine(workDir, baseName + ext);
+            try
+            {
+                if (File.Exists(f))
+                {
+                    File.Delete(f);
+                    logger.LogInformation("Removed an earlier scan's {File} before scanning again", f);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "Could not remove an earlier scan's {File}", f);
+            }
+        }
     }
 
     private static int? TryGetExitCode(Process p)

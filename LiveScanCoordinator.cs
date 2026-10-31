@@ -77,6 +77,7 @@ public sealed class LiveScanCoordinator : IDisposable
         try
         {
             Directory.CreateDirectory(workDir);
+            ComskipRunner.ClearOldOutput(workDir, mediaPath, _logger);
 
             var psi = new ProcessStartInfo
             {
