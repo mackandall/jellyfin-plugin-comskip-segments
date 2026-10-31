@@ -1,14 +1,8 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.ComskipSegments.Configuration;
-using MediaBrowser.Controller.Dto;
-using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.LiveTv;
-using MediaBrowser.Model.LiveTv;
-using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,8 +11,8 @@ namespace Jellyfin.Plugin.ComskipSegments.Detection;
 
 /// <summary>
 /// Tier 1 of real-time-ish commercial detection ("start Comskip at recording-begin"; see
-/// project memory for the full investigation): polls Jellyfin's Live TV recordings list
-/// for anything currently in progress, same as <see cref="LiveRecordingChannelPoller"/>
+/// project memory for the full investigation): polls what is being recorded right now
+/// (<see cref="ActiveRecordings"/>, so a restarted recording's later piece counts too), same as <see cref="LiveRecordingChannelPoller"/>
 /// and for the same reason (a DVR recording isn't a library item — and so fires no
 /// library events — until after it finishes), and starts a live Comskip process per
 /// recording via <see cref="LiveScanCoordinator"/>. When the recording later settles,
@@ -43,11 +37,6 @@ public sealed class LiveScanStarter : BackgroundService
     private readonly ILogger<LiveScanStarter> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly LiveScanCoordinator _coordinator;
-
-    private static readonly DtoOptions RecordingDtoOptions = new(false)
-    {
-        Fields = new[] { ItemFields.Path, ItemFields.ChannelInfo }
-    };
 
     public LiveScanStarter(
         ILogger<LiveScanStarter> logger,
@@ -102,51 +91,31 @@ public sealed class LiveScanStarter : BackgroundService
 
     private async Task PollOnceAsync(PluginConfiguration cfg, CancellationToken cancellationToken)
     {
-        if (_serviceProvider.GetService<ILiveTvManager>() is not { } liveTvManager)
+        foreach (var rec in await ActiveRecordings.ListAsync(_serviceProvider, cancellationToken).ConfigureAwait(false))
         {
-            return;
-        }
-
-        // Requires a real UserId (Guid.Empty comes back empty, confirmed against a live
-        // server) even though recordings aren't meaningfully user-scoped.
-        var userId = _serviceProvider.GetService<IUserManager>()?.GetUsers().FirstOrDefault()?.Id ?? Guid.Empty;
-
-        var query = new RecordingQuery
-        {
-            UserId = userId,
-            IsInProgress = true,
-            EnableImages = false,
-            Limit = 200
-        };
-
-        var result = await liveTvManager.GetRecordingsAsync(query, RecordingDtoOptions).ConfigureAwait(false);
-
-        foreach (var dto in result.Items)
-        {
-            if (string.IsNullOrEmpty(dto.Path) || _coordinator.IsTracking(dto.Path))
+            if (_coordinator.IsTracking(rec.Path))
             {
                 continue;
             }
 
-            if (!string.IsNullOrWhiteSpace(cfg.RecordingsPath) && !IsUnder(dto.Path, cfg.RecordingsPath))
+            if (!string.IsNullOrWhiteSpace(cfg.RecordingsPath) && !IsUnder(rec.Path, cfg.RecordingsPath))
             {
                 continue;
             }
 
-            var seriesName = string.IsNullOrWhiteSpace(dto.SeriesName) ? dto.Name : dto.SeriesName;
             if (!DetectionGate.ShouldAutoDetectForInProgressRecording(
-                    dto.Path, seriesName, dto.ChannelName, dto.ChannelNumber, cfg, out var reason))
+                    rec.Path, rec.Name, rec.ChannelName, rec.ChannelNumber, cfg, out var reason))
             {
-                _logger.LogDebug("Live scan skipped for {Path}: {Reason}", dto.Path, reason);
+                _logger.LogDebug("Live scan skipped for {Path}: {Reason}", rec.Path, reason);
                 continue;
             }
 
-            if (SafeFileLength(dto.Path) < MinBytesToStart)
+            if (SafeFileLength(rec.Path) < MinBytesToStart)
             {
                 continue;
             }
 
-            _coordinator.Start(cfg.ComskipPath, cfg.ComskipIniPath, cfg.WorkDirectory, dto.Path);
+            _coordinator.Start(cfg.ComskipPath, cfg.ComskipIniPath, cfg.WorkDirectory, rec.Path);
         }
     }
 

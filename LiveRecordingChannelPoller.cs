@@ -1,13 +1,7 @@
 using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.ComskipSegments.Configuration;
-using MediaBrowser.Controller.Dto;
-using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.LiveTv;
-using MediaBrowser.Model.LiveTv;
-using MediaBrowser.Model.Querying;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,7 +9,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.ComskipSegments.Detection;
 
 /// <summary>
-/// Polls Jellyfin's Live TV recordings list for anything currently in progress and caches
+/// Polls what is being recorded right now (<see cref="ActiveRecordings"/>: every file an
+/// in-progress timer is writing, a restarted recording's later piece included) and caches
 /// its channel into <see cref="RecordingChannelCache"/>, keyed by path.
 ///
 /// Why polling instead of reacting to library events (what
@@ -38,11 +33,6 @@ public sealed class LiveRecordingChannelPoller : BackgroundService
     private readonly ILogger<LiveRecordingChannelPoller> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly RecordingChannelCache _channelCache;
-
-    private static readonly DtoOptions RecordingDtoOptions = new(false)
-    {
-        Fields = new[] { ItemFields.Path, ItemFields.ChannelInfo }
-    };
 
     public LiveRecordingChannelPoller(
         ILogger<LiveRecordingChannelPoller> logger,
@@ -89,48 +79,24 @@ public sealed class LiveRecordingChannelPoller : BackgroundService
 
     private async Task PollOnceAsync(CancellationToken cancellationToken)
     {
-        if (_serviceProvider.GetService<ILiveTvManager>() is not { } liveTvManager)
+        foreach (var rec in await ActiveRecordings.ListAsync(_serviceProvider, cancellationToken).ConfigureAwait(false))
         {
-            return;
-        }
-
-        // Requires a real UserId (Guid.Empty comes back empty, confirmed against a live
-        // server) even though recordings aren't meaningfully user-scoped.
-        var userId = _serviceProvider.GetService<IUserManager>()?.GetUsers().FirstOrDefault()?.Id ?? Guid.Empty;
-
-        var query = new RecordingQuery
-        {
-            UserId = userId,
-            IsInProgress = true,
-            EnableImages = false,
-            Limit = 200
-        };
-
-        var result = await liveTvManager.GetRecordingsAsync(query, RecordingDtoOptions).ConfigureAwait(false);
-
-        foreach (var dto in result.Items)
-        {
-            if (string.IsNullOrEmpty(dto.Path))
+            if (string.IsNullOrEmpty(rec.ChannelName) && string.IsNullOrEmpty(rec.ChannelNumber))
             {
                 continue;
             }
 
-            if (string.IsNullOrEmpty(dto.ChannelName) && string.IsNullOrEmpty(dto.ChannelNumber))
+            if (_channelCache.TryGet(rec.Path, out _))
             {
                 continue;
             }
 
-            if (_channelCache.TryGet(dto.Path, out _))
-            {
-                continue;
-            }
-
-            _channelCache.Set(dto.Path, new ChannelResolver.ChannelInfo(dto.ChannelName, dto.ChannelNumber));
+            _channelCache.Set(rec.Path, new ChannelResolver.ChannelInfo(rec.ChannelName, rec.ChannelNumber));
             _logger.LogInformation(
                 "Captured channel for in-progress recording {Path}: {Name} ({Number})",
-                dto.Path,
-                dto.ChannelName,
-                dto.ChannelNumber);
+                rec.Path,
+                rec.ChannelName,
+                rec.ChannelNumber);
         }
     }
 }

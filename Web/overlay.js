@@ -88,7 +88,15 @@
         var mine = (sessions || []).filter(function (s) {
           return s.DeviceId === apiClient.deviceId() && s.NowPlayingItem;
         })[0];
-        return mine ? mine.NowPlayingItem.Id : null;
+        if (!mine) {
+          return null;
+        }
+        // The version playing, not the item: a recording Jellyfin restarted part-way (the
+        // stream dropped) is one item with its pieces as versions, and its id is the first,
+        // finished piece's. A version's own id leads to its own file, so the piece still being
+        // recorded gets its live breaks. Live TV's stream ids aren't item ids; keep the item.
+        var source = mine.PlayState && mine.PlayState.MediaSourceId;
+        return source && /^[0-9a-f]{32}$/i.test(source) ? source : mine.NowPlayingItem.Id;
       })
       .catch(function (err) {
         log('getSessions failed: ' + err);
