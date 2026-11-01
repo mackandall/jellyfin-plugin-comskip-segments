@@ -70,12 +70,20 @@ plugins (Episode History, JellyDVR Space, Schedule and Live, XMLTV Guide Cleaner
 1. Find your Jellyfin plugins folder. On a Linux package install it's typically
    `/var/lib/jellyfin/plugins`, owned by the `jellyfin` service account — installing
    requires `sudo` (or write access as that user).
-2. Create a subfolder and drop the DLL, `icon.png`, and `meta.json` in:
+2. Create a subfolder named like the catalog's (`Comskip Commercial Segments_<version>`) and
+   drop the DLL, `icon.png`, and `meta.json` in (or run `sudo ./install.sh`, which does this,
+   removes other installed versions and restarts Jellyfin):
    ```
-   sudo mkdir -p /var/lib/jellyfin/plugins/ComskipSegments
-   sudo cp bin/Release/net10.0/Jellyfin.Plugin.ComskipSegments.dll icon.png meta.json /var/lib/jellyfin/plugins/ComskipSegments/
+   sudo mkdir -p "/var/lib/jellyfin/plugins/Comskip Commercial Segments_1.3.3.0"
+   sudo cp bin/Release/net10.0/Jellyfin.Plugin.ComskipSegments.dll icon.png meta.json "/var/lib/jellyfin/plugins/Comskip Commercial Segments_1.3.3.0/"
    ```
 3. Restart Jellyfin.
+
+The plugin keeps its state (scan results, edited breaks, cuts, trim backups) in Jellyfin's data
+folder, `<data>/comskip-segments` (`/var/lib/jellyfin/data/comskip-segments` on Linux), not in
+the plugin folder, so updating from the catalog never touches it. Versions before 1.3.3.0 kept
+it in `<plugins>/ComskipSegments`, which Jellyfin deleted along with a manually installed copy
+when the catalog update replaced it; 1.3.3.0 copies the files from there on its first start.
 
 ### Either way: Comskip itself
 
@@ -231,6 +239,24 @@ its breaks frame by frame and, if you like, cut them out of the file.
 - **Picture size:** **Fit the window** (default) keeps the frames, controls and timeline
   in view below the picture; or Small, Medium, Large, or drag the picture's corner.
 
+The **Queue** tab shows what Comskip is doing:
+
+- **Now scanning:** one card per worker with the recording, its stage (audio check, program
+  start, Comskip), how far Comskip has read the file, the time so far and a guess at the time
+  left, and why it was queued. **Pause** freezes Comskip where it is and **Resume** lets it carry
+  on (paused time doesn't count towards the per-file timeout); **Cancel scan** ends it, and the
+  recording keeps the breaks it had: a re-scan replaces them only when it finishes.
+- **Pause the queue:** nothing new starts until you resume it, also after a server restart; the
+  scans running at the time carry on unless you pause them too.
+- **Waiting:** the queue in order, with why each one is there (started by you, new recording,
+  library check, Media Segment Scan, after a trim), **Scan next** to move one to the top,
+  **Remove**, **Remove those you started** and **Clear the queue**. Recordings still being
+  recorded are listed too; they join the queue when the recording ends. The queue is saved in
+  the plugin's data folder (`scan-queue.json`): after a restart it carries on in the same order,
+  and a scan the restart cut off starts again first.
+- **Recently finished:** the last 200 scans with their result (breaks, none, failed and why,
+  stopped), how long each took, **Open in editor** or **Scan again**.
+
 #### Screenshots
 
 The recordings list, each with a bar showing where its breaks are:
@@ -283,6 +309,7 @@ be updated together, or Option A installs above break:
 
 | Version | Date | Notes |
 |---|---|---|
+| 1.3.3.0 | 2026-11-01 | Each scan of a finished recording is about a minute faster: it no longer waits at the end of the file for more to arrive (`live_tv=0` for finished files; live scans keep `live_tv=1`), with the same breaks. **Queue** tab on the Commercial segments dashboard: the scans running now (progress, time left, Stop), the ones waiting in order (why each is queued, Scan next, Remove, Clear) and the last 200 finished; pause the queue or a single scan, cancel a scan. A re-scan keeps the old breaks until the new ones are in. The queue is kept across restarts (it was in memory only: a restart lost every waiting scan). The plugin's state moves to `<data>/comskip-segments` (copied from `<plugins>/ComskipSegments` on first start). Updating a manually installed copy from the catalog deleted that folder and every stored result with it. `install.sh` installs into a versioned folder like the catalog does. |
 | 1.3.2.0 | 2026-10-31 | Fixes: a live scan no longer shows an earlier scan's breaks for the same file name; a recording Jellyfin restarted part-way ("Name - 1.ts") gets its live scan and live skip; the web overlay asks for live breaks with the recording being played. The `.edl` beside a moved or newly added video (and its other versions) is imported when it's added, not at the next Media Segment Scan; a folder left with no video once its kept original is deleted is removed. |
 | 1.3.1.0 | 2026-10-21 | Check a cut: its joins are marked on the timeline, with **‹ Join / Join ›**. **Delete original** per cut recording and **Delete all originals** with the space they take; originals left without their recording are deleted after a day. Kept originals now go after 7 days by default (*Keep the original file as a backup* is off for new installs; an existing setting is kept). Another program's `.edl` stays with the original after a cut. The editor's picture fits the window (or Small/Medium/Large/drag), with the timeline under the controls. Fixes: frames follow quick jumps; the start lands on the first frame. With JellyDVR Space, a moved recording keeps its Undo. |
 | 1.3.0.0 | 2026-10-21 | **Commercial segments dashboard** (admins): list of recordings with their breaks, and an editor to fix breaks frame by frame (wheel/keys, keyframes, previous/next black, mark-in/out), with timeline hover and scrubbing, an overview grid of every keyframe and fast forward/rewind. **Cut commercials out** of a recording with a fast stream copy, in the background, with Undo; resume positions and program start follow the cut. New setting: Cut rounding. Edited breaks survive Jellyfin re-reading the file. |
