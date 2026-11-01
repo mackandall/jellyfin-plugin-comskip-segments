@@ -160,7 +160,7 @@ public sealed class RecordingWatcher : IHostedService, IDisposable
             // the .ts was overwritten (re-record), Jellyfin's CleanupExtractedData has
             // already dropped the stale record by now, so this correctly re-detects.
             _logger.LogInformation("Recording settled, queueing commercial detection: {Path}", pending.Path);
-            _manager.Enqueue(itemId);
+            _manager.Enqueue(itemId, reason: ScanReason.NewRecording);
         }
         catch (Exception ex)
         {

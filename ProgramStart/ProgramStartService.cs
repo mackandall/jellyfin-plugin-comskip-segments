@@ -420,7 +420,7 @@ public sealed class ProgramStartService
         }
 
         _serviceProvider.GetService<Detection.DetectionStore>()?.Remove(item.Id);
-        _serviceProvider.GetService<Detection.DetectionManager>()?.Enqueue(item.Id, force: false);
+        _serviceProvider.GetService<Detection.DetectionManager>()?.Enqueue(item.Id, force: false, reason: Detection.ScanReason.AfterTrim);
     }
 
     // Re-asks the segment providers (ours serves the marker) so players see it now.

@@ -4,12 +4,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.ComskipSegments.AudioTrim;
 using Jellyfin.Plugin.ComskipSegments.Comskip;
 using Jellyfin.Plugin.ComskipSegments.Configuration;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.MediaSegments;
@@ -43,10 +44,14 @@ public sealed class DetectionManager : BackgroundService
     private readonly ProgramStart.ProgramStartService _programStart;
     private readonly CutTracker _cuts;
 
-    private readonly Channel<Guid> _queue =
-        Channel.CreateUnbounded<Guid>(new UnboundedChannelOptions { SingleReader = false });
+    private readonly ScanQueue _queue;
+    private readonly IReadOnlyList<QueueEntry> _restore;
 
+    // Waiting (in _queue) or running (in _running): one of each item at a time.
     private readonly ConcurrentDictionary<Guid, byte> _inFlight = new();
+
+    // Per worker number, the scan it's on.
+    private readonly ConcurrentDictionary<int, RunningScan> _running = new();
 
     // In-progress-recording guard: an item enqueued while its .ts is still being written
     // (e.g. a backstop scan or Media Segment Scan that overlaps a recording) is not run
@@ -55,7 +60,8 @@ public sealed class DetectionManager : BackgroundService
     private static readonly TimeSpan RequeueDelay = TimeSpan.FromMinutes(2);
     private const int MaxDeferrals = 45; // ~90 min ceiling before we stop chasing a file
     private readonly ConcurrentDictionary<Guid, int> _deferrals = new();
-    private readonly ConcurrentDictionary<Guid, byte> _requeueScheduled = new();
+    private readonly ConcurrentDictionary<Guid, Deferred> _requeueScheduled = new();
+    private readonly ConcurrentDictionary<Guid, DateTime> _deferredSince = new();
     private readonly ConcurrentDictionary<Guid, byte> _republishPending = new();
 
     // Long enough for Jellyfin to finish re-creating an item (and its siblings) before the
@@ -84,8 +90,12 @@ public sealed class DetectionManager : BackgroundService
         LiveScanCoordinator liveScanCoordinator,
         AudioTrimService audioTrim,
         ProgramStart.ProgramStartService programStart,
-        CutTracker cuts)
+        CutTracker cuts,
+        IApplicationPaths applicationPaths)
     {
+        _queue = new ScanQueue(logger, applicationPaths);
+        _restore = _queue.LoadSaved();
+        _queue.SaveAlso(SavedOutsideQueue);
         _programStart = programStart;
         _cuts = cuts;
         _logger = logger;
@@ -125,8 +135,10 @@ public sealed class DetectionManager : BackgroundService
     /// folder / scan paths and to the show/channel lists; a forced request (the item menu,
     /// the config page) scans any file.
     /// </summary>
-    public EnqueueResult Enqueue(Guid itemId, bool force = false)
+    /// <param name="reason">Why (a <see cref="ScanReason"/>); shown on the Queue tab. Default: manual when forced, else library check.</param>
+    public EnqueueResult Enqueue(Guid itemId, bool force = false, string? reason = null)
     {
+        reason ??= force ? ScanReason.Manual : ScanReason.LibraryCheck;
         if (itemId.Equals(Guid.Empty))
         {
             return EnqueueResult.Skipped;
@@ -162,9 +174,9 @@ public sealed class DetectionManager : BackgroundService
                 return EnqueueResult.Skipped;
             }
 
-            if (!DetectionGate.ShouldAutoDetect(item, Config, out var reason, ResolveChannel))
+            if (!DetectionGate.ShouldAutoDetect(item, Config, out var skipReason, ResolveChannel))
             {
-                _logger.LogDebug("Enqueue skipped for {Path}: {Reason}", item.Path, reason);
+                _logger.LogDebug("Enqueue skipped for {Path}: {Reason}", item.Path, skipReason);
                 // Commercial-free channels are kept from Comskip, but their promos before the
                 // program are exactly what a remembered card finds.
                 if (item.Path is not null && !IsStillBeingWritten(item.Path) && _programStart.WantsAutomatic(item))
@@ -178,7 +190,7 @@ public sealed class DetectionManager : BackgroundService
             if (item.Path is not null && IsStillBeingWritten(item.Path))
             {
                 _logger.LogDebug("Enqueue deferred, still recording: {Path}", item.Path);
-                ScheduleRequeue(itemId);
+                ScheduleRequeue(new QueueEntry(itemId, reason, DateTime.UtcNow, force));
                 return EnqueueResult.Queued;
             }
         }
@@ -188,11 +200,7 @@ public sealed class DetectionManager : BackgroundService
             return EnqueueResult.Queued; // already queued or running
         }
 
-        if (!_queue.Writer.TryWrite(itemId))
-        {
-            _inFlight.TryRemove(itemId, out _);
-        }
-
+        _queue.Add(new QueueEntry(itemId, reason, DateTime.UtcNow, force));
         return EnqueueResult.Queued;
     }
 
@@ -460,11 +468,12 @@ public sealed class DetectionManager : BackgroundService
 
         _libraryManager.ItemAdded += OnItemAdded;
         _ = Task.Run(SeedOwnedEdls, stoppingToken);
+        RestoreSavedQueue();
 
         var workers = new Task[workerCount];
         for (var i = 0; i < workerCount; i++)
         {
-            workers[i] = WorkerLoop(stoppingToken);
+            workers[i] = WorkerLoop(i + 1, stoppingToken);
         }
 
         try
@@ -477,45 +486,344 @@ public sealed class DetectionManager : BackgroundService
         }
     }
 
-    private async Task WorkerLoop(CancellationToken ct)
+    public override Task StopAsync(CancellationToken cancellationToken)
     {
-        await foreach (var itemId in _queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        // Saved before the running scans are cancelled, so they're still in the list.
+        _queue.Freeze();
+        return base.StopAsync(cancellationToken);
+    }
+
+    /// <summary>Puts back what was queued when the server stopped: running scans first, then the waiting ones in order.</summary>
+    private void RestoreSavedQueue()
+    {
+        var restored = 0;
+        foreach (var e in _restore)
         {
+            if (_libraryManager.GetItemById(e.Id) is null || (!e.Force && _store.IsCompleted(e.Id)) || !_inFlight.TryAdd(e.Id, 0))
+            {
+                continue;
+            }
+
+            _queue.Add(e);
+            restored++;
+        }
+
+        if (restored > 0)
+        {
+            _logger.LogInformation("Put {Count} scan(s) back in the queue from before the restart", restored);
+        }
+    }
+
+    private async Task WorkerLoop(int worker, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            QueueEntry entry;
             try
             {
-                await ProcessOne(itemId, ct).ConfigureAwait(false);
+                entry = await _queue.TakeAsync(ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                throw;
+                return;
+            }
+
+            using var job = new RunningScan(entry, worker);
+            _running[worker] = job;
+            _queue.Changed();
+            FinishedEntry? done;
+            try
+            {
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, job.Cancel.Token);
+                done = await ProcessOne(job, linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return; // the server is stopping: it stays in the saved queue and runs again first
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Scan cancelled from the Queue tab: {Name}", job.Name);
+                done = Done(job, "stopped", 0, _store.TryGet(entry.Id, out _) ? "Kept the breaks it had" : null, false);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled error detecting commercials for {ItemId}", itemId);
+                _logger.LogError(ex, "Unhandled error detecting commercials for {ItemId}", entry.Id);
+                done = Done(job, "failed", 0, ex.Message, false);
             }
-            finally
+
+            _running.TryRemove(worker, out _);
+            _inFlight.TryRemove(entry.Id, out _);
+            if (done is not null)
             {
-                _inFlight.TryRemove(itemId, out _);
+                _queue.Finished(done);
+            }
+            else
+            {
+                _queue.Changed();
             }
         }
     }
 
+    private static FinishedEntry Done(RunningScan job, string result, int breaks, string? detail, bool comskip) =>
+        new(job.Entry.Id, job.Name, job.Entry.Reason, result, breaks, detail, job.StartedUtc, DateTime.UtcNow, comskip);
+
+    /// <summary>"FBI · S02E04 · Predator", or the name.</summary>
+    public static string Describe(BaseItem item) =>
+        item is Episode e && !string.IsNullOrEmpty(e.SeriesName)
+            ? e.SeriesName + " · " + (e.ParentIndexNumber is { } sn && e.IndexNumber is { } en ? $"S{sn:00}E{en:00} · " : string.Empty) + e.Name
+            : item.Name;
+
+    // What must be saved besides the waiting list: running scans (first) and those waiting for a recording to end.
+    private IReadOnlyList<QueueEntry> SavedOutsideQueue() =>
+        _running.Values.OrderBy(j => j.StartedUtc).Select(j => j.Entry)
+            .Concat(_requeueScheduled.Values.Select(d => d.Entry))
+            .ToList();
+
+    /// <summary>A scan a worker is on.</summary>
+    public sealed class RunningScan : IDisposable
+    {
+        public RunningScan(QueueEntry entry, int worker)
+        {
+            Entry = entry;
+            Worker = worker;
+        }
+
+        public QueueEntry Entry { get; }
+
+        public int Worker { get; }
+
+        public DateTime StartedUtc { get; } = DateTime.UtcNow;
+
+        public CancellationTokenSource Cancel { get; } = new();
+
+        public string Name { get; set; } = string.Empty;
+
+        public string? Path { get; set; }
+
+        /// <summary>starting, audio, program-start, comskip, saving.</summary>
+        public string Stage { get; set; } = "starting";
+
+        public int? Pid { get; set; }
+
+        public DateTime? ComskipStartedUtc { get; set; }
+
+        /// <summary>The time Comskip has actually run (not while paused).</summary>
+        public System.Diagnostics.Stopwatch ComskipActive { get; } = new();
+
+        /// <summary>When it was paused (null: not paused).</summary>
+        public DateTime? PausedUtc { get; private set; }
+
+        /// <summary>Only Comskip itself can be paused, not the audio or program-start checks before it.</summary>
+        public bool CanPause => Pid is not null && OperatingSystem.IsLinux();
+
+        private readonly object _pauseGate = new();
+
+        /// <summary>Freezes Comskip where it is (SIGSTOP); <see cref="Resume"/> lets it carry on.</summary>
+        public bool Pause()
+        {
+            lock (_pauseGate)
+            {
+                if (PausedUtc is not null || Pid is not { } pid || !OperatingSystem.IsLinux() || Signal(pid, SigStop) != 0)
+                {
+                    return false;
+                }
+
+                ComskipActive.Stop();
+                PausedUtc = DateTime.UtcNow;
+                return true;
+            }
+        }
+
+        public bool Resume()
+        {
+            lock (_pauseGate)
+            {
+                if (PausedUtc is null)
+                {
+                    return false;
+                }
+
+                if (Pid is { } pid)
+                {
+                    Signal(pid, SigCont);
+                }
+
+                ComskipActive.Start();
+                PausedUtc = null;
+                return true;
+            }
+        }
+
+        public void Dispose() => Cancel.Dispose();
+
+        private const int SigCont = 18; // Linux (x86-64, arm64)
+        private const int SigStop = 19;
+
+        [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+        private static extern int Signal(int pid, int sig);
+    }
+
+    /// <summary>Waiting for its recording to end; checked again every couple of minutes.</summary>
+    public sealed record Deferred(QueueEntry Entry, CancellationTokenSource Cancel);
+
+    /// <summary>Everything the Queue tab shows.</summary>
+    public sealed record QueueSnapshot(
+        int Workers,
+        IReadOnlyList<RunningScan> Running,
+        IReadOnlyList<QueueEntry> Waiting,
+        IReadOnlyList<(QueueEntry Entry, DateTime Since)> Recording,
+        IReadOnlyList<FinishedEntry> History);
+
+    public QueueSnapshot Snapshot() => new(
+        Math.Max(1, Config.MaxConcurrentJobs),
+        _running.Values.OrderBy(j => j.Worker).ToList(),
+        _queue.Waiting(),
+        _requeueScheduled.Values
+            .Select(d => (d.Entry, _deferredSince.TryGetValue(d.Entry.Id, out var since) ? since : d.Entry.QueuedUtc))
+            .OrderBy(d => d.Item2)
+            .ToList(),
+        _queue.History());
+
+    /// <summary>Cancels a running scan (the recording keeps the breaks it had). False if it isn't running.</summary>
+    public bool Cancel(Guid itemId)
+    {
+        var job = _running.Values.FirstOrDefault(j => j.Entry.Id == itemId);
+        if (job is null)
+        {
+            return false;
+        }
+
+        job.Cancel.Cancel(); // a paused Comskip is killed all the same
+        return true;
+    }
+
+    /// <summary>Pauses (or resumes) a running Comskip. False if it isn't running Comskip.</summary>
+    public bool PauseScan(Guid itemId, bool pause)
+    {
+        var job = _running.Values.FirstOrDefault(j => j.Entry.Id == itemId);
+        if (job is null)
+        {
+            return false;
+        }
+
+        var done = pause ? job.Pause() : job.Resume();
+        if (done)
+        {
+            _logger.LogInformation("Scan {Action} from the Queue tab: {Name}", pause ? "paused" : "resumed", job.Name);
+        }
+
+        return done;
+    }
+
+    /// <summary>Paused: nothing new starts; running scans go on. Kept across restarts.</summary>
+    public bool QueuePaused => _queue.Paused;
+
+    public void PauseQueue(bool pause)
+    {
+        _queue.SetPaused(pause);
+        _logger.LogInformation("Comskip queue {State} from the Queue tab", pause ? "paused" : "resumed");
+    }
+
+    /// <summary>Moves a waiting scan to the top: it runs when the next worker is free.</summary>
+    public bool ScanNext(Guid itemId) => _queue.MoveFirst(itemId);
+
+    /// <summary>Takes waiting scans (and those waiting for their recording to end) out of the queue; returns how many.</summary>
+    public int Remove(Func<QueueEntry, bool> match)
+    {
+        var removed = _queue.Remove(match);
+        foreach (var e in removed)
+        {
+            _inFlight.TryRemove(e.Id, out _);
+        }
+
+        var count = removed.Count;
+        foreach (var d in _requeueScheduled.Values.Where(d => match(d.Entry)).ToList())
+        {
+            if (_requeueScheduled.TryRemove(d.Entry.Id, out _))
+            {
+                try
+                {
+                    d.Cancel.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Its wait just ended; the re-check sees it's no longer listed.
+                }
+
+                _deferrals.TryRemove(d.Entry.Id, out _);
+                _deferredSince.TryRemove(d.Entry.Id, out _);
+                count++;
+            }
+        }
+
+        _queue.Changed();
+        return count;
+    }
+
+    /// <summary>How far Comskip has read the file (0–1), from the position of its open file; null if not known.</summary>
+    public static double? Progress(RunningScan job)
+    {
+        if (job.Pid is not { } pid || job.Path is not { } path || !OperatingSystem.IsLinux())
+        {
+            return null;
+        }
+
+        try
+        {
+            var size = new FileInfo(path).Length;
+            if (size <= 0)
+            {
+                return null;
+            }
+
+            foreach (var fd in Directory.EnumerateFileSystemEntries($"/proc/{pid}/fd"))
+            {
+                var target = new FileInfo(fd).LinkTarget;
+                if (!string.Equals(target, path, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                foreach (var line in File.ReadLines($"/proc/{pid}/fdinfo/{System.IO.Path.GetFileName(fd)}"))
+                {
+                    if (line.StartsWith("pos:", StringComparison.Ordinal)
+                        && long.TryParse(line.AsSpan(4).Trim(), out var pos))
+                    {
+                        return Math.Clamp((double)pos / size, 0, 1);
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Comskip just ended, or /proc can't be read.
+        }
+
+        return null;
+    }
+
     private DateTime _lastNotInstalledWarning = DateTime.MinValue;
 
-    private async Task ProcessOne(Guid itemId, CancellationToken ct)
+    /// <summary>Runs one scan; what to show under Recently finished (null: not finished, e.g. still recording).</summary>
+    private async Task<FinishedEntry?> ProcessOne(RunningScan job, CancellationToken ct)
     {
         var cfg = Config;
+        var itemId = job.Entry.Id;
 
         if (_libraryManager.GetItemById(itemId) is not BaseItem item || item.Path is null)
         {
             _logger.LogWarning("Item {ItemId} has no resolvable path; skipping", itemId);
-            return;
+            job.Name = "(no longer in the library)";
+            return Done(job, "skipped", 0, "No longer in the library", false);
         }
 
+        job.Name = Describe(item);
+        job.Path = item.Path;
         if (!File.Exists(item.Path))
         {
             _logger.LogWarning("Path missing for {ItemId}: {Path}", itemId, item.Path);
-            return;
+            return Done(job, "skipped", 0, "The file isn't there", false);
         }
 
         // The recording may have started (or restarted, for a re-record) after this item
@@ -524,11 +832,12 @@ public sealed class DetectionManager : BackgroundService
         if (IsStillBeingWritten(item.Path))
         {
             _logger.LogInformation("Recording still in progress, deferring detection: {Path}", item.Path);
-            ScheduleRequeue(itemId);
-            return;
+            ScheduleRequeue(job.Entry);
+            return null;
         }
 
         _deferrals.TryRemove(itemId, out _);
+        _deferredSince.TryRemove(itemId, out _);
 
         // Audio-format trim runs BEFORE Comskip, and only as part of the automatic
         // pipeline here (the manual item-menu/config-page path calls AudioTrimService
@@ -538,6 +847,7 @@ public sealed class DetectionManager : BackgroundService
         var audioTrimApplied = false;
         if (cfg.EnableAudioFormatTrim && cfg.AudioTrimAutomaticApply)
         {
+            job.Stage = "audio";
             try
             {
                 // Claimed like a manual cut: shows as "Cutting" in the apps, and nothing else
@@ -576,10 +886,16 @@ public sealed class DetectionManager : BackgroundService
 
         // A remembered program-start card (after the audio check: that one already fixes the
         // start where the audio format changes). Before Comskip, so a trim comes first.
-        if (!audioTrimApplied && _programStart.WantsAutomatic(item) && await AutoProgramStart(item, ct).ConfigureAwait(false))
+        if (!audioTrimApplied && _programStart.WantsAutomatic(item))
         {
-            audioTrimApplied = true; // the timeline moved: same handling as an audio trim
+            job.Stage = "program-start";
+            if (await AutoProgramStart(item, ct).ConfigureAwait(false))
+            {
+                audioTrimApplied = true; // the timeline moved: same handling as an audio trim
+            }
         }
+
+        ct.ThrowIfCancellationRequested(); // stopped from the Queue tab during the checks above
 
         // If a live Comskip process has been tailing this recording since it started
         // (see LiveScanStarter / LiveScanCoordinator), harvest whatever it already
@@ -616,25 +932,38 @@ public sealed class DetectionManager : BackgroundService
                 _logger.LogWarning("{Message}", ComskipInstaller.NotInstalledMessage);
             }
 
-            return;
+            return Done(job, "skipped", 0, "Comskip isn't installed (Settings)", false);
         }
         else
         {
             _logger.LogInformation("Running Comskip on {Path}", item.Path);
+            job.Stage = "comskip";
+            job.ComskipStartedUtc = DateTime.UtcNow;
             result = await _runner.RunAsync(
                 cfg.ComskipPath,
                 cfg.ComskipIniPath,
                 cfg.WorkDirectory,
                 item.Path,
                 cfg.PerFileTimeoutMinutes,
-                ct).ConfigureAwait(false);
+                ct,
+                pid =>
+                {
+                    job.Pid = pid;
+                    job.ComskipActive.Start();
+                },
+                () => job.ComskipActive.Elapsed).ConfigureAwait(false);
+            job.Resume(); // only if it was paused when Comskip ended (it can't, but never leave it marked so)
+            job.Pid = null;
+            job.ComskipActive.Stop();
         }
 
+        job.Stage = "saving";
+        var ranComskip = harvestedEdlPath is null;
         if (result.Outcome == ComskipOutcome.Failed || result.EdlPath is null)
         {
             // Record as Failed (NOT NoCommercials) so it stays eligible for a retry.
             _store.Save(itemId, new DetectionRecord(DetectionStatus.Failed, Array.Empty<CommercialBreak>(), DateTime.UtcNow, DetectionRecord.SourceComskip));
-            return;
+            return Done(job, "failed", 0, result.Error ?? "Comskip failed", false);
         }
 
         var breaks = EdlParser.Parse(result.EdlPath, cfg.PaddingSeconds);
@@ -655,6 +984,12 @@ public sealed class DetectionManager : BackgroundService
 
         // Publish immediately so the new breaks don't wait for the next Media Segment Scan.
         await PublishAsync(item, forceOverwrite: true, ct).ConfigureAwait(false);
+        return Done(
+            job,
+            breaks.Count > 0 ? "breaks" : "none",
+            breaks.Count,
+            ranComskip ? null : "From the scan that ran while it recorded",
+            ranComskip && job.ComskipStartedUtc is not null);
     }
 
     /// <summary>
@@ -718,13 +1053,17 @@ public sealed class DetectionManager : BackgroundService
     }
 
     /// <summary>Re-queue an item after <see cref="RequeueDelay"/>, bounded by <see cref="MaxDeferrals"/>.</summary>
-    private void ScheduleRequeue(Guid itemId)
+    private void ScheduleRequeue(QueueEntry entry)
     {
-        if (!_requeueScheduled.TryAdd(itemId, 0))
+        var itemId = entry.Id;
+        var deferred = new Deferred(entry, CancellationTokenSource.CreateLinkedTokenSource(_stoppingToken));
+        if (!_requeueScheduled.TryAdd(itemId, deferred))
         {
+            deferred.Cancel.Dispose();
             return; // a delayed re-enqueue is already pending for this item
         }
 
+        _deferredSince.TryAdd(itemId, DateTime.UtcNow);
         var attempts = _deferrals.AddOrUpdate(itemId, 1, (_, c) => c + 1);
         if (attempts > MaxDeferrals)
         {
@@ -732,25 +1071,39 @@ public sealed class DetectionManager : BackgroundService
                 "Still recording after {Attempts} checks; stopping automatic retries for {ItemId}", attempts, itemId);
             _requeueScheduled.TryRemove(itemId, out _);
             _deferrals.TryRemove(itemId, out _);
+            _deferredSince.TryRemove(itemId, out _);
+            deferred.Cancel.Dispose();
             return;
         }
 
+        _queue.Changed();
         _ = Task.Run(async () =>
         {
+            bool owned;
             try
             {
-                await Task.Delay(RequeueDelay, _stoppingToken).ConfigureAwait(false);
+                await Task.Delay(RequeueDelay, deferred.Cancel.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                return;
+                // Removed from the Queue tab, or the server is stopping.
             }
             finally
             {
-                _requeueScheduled.TryRemove(itemId, out _);
+                // Only our own entry: removed from the Queue tab means it's gone already (and maybe deferred anew since).
+                owned = _requeueScheduled.TryRemove(new KeyValuePair<Guid, Deferred>(itemId, deferred));
+                deferred.Cancel.Dispose();
             }
 
-            Enqueue(itemId);
+            if (!owned || _stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (Enqueue(itemId, entry.Force, entry.Reason) != EnqueueResult.Queued || !_requeueScheduled.ContainsKey(itemId))
+            {
+                _deferredSince.TryRemove(itemId, out _);
+            }
         });
     }
 

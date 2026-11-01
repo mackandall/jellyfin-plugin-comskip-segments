@@ -133,7 +133,7 @@ public sealed class ComskipSegmentProvider : IMediaSegmentProvider
         if (!_store.IsCompleted(itemId)
             && (Plugin.Instance?.Configuration.EnableMediaSegmentScanEnqueue ?? true))
         {
-            _manager.Enqueue(itemId);
+            _manager.Enqueue(itemId, reason: ScanReason.SegmentScan);
         }
 
         return Array.Empty<MediaSegmentDto>();

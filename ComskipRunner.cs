@@ -16,7 +16,8 @@ public enum ComskipOutcome
     Failed
 }
 
-public sealed record ComskipRunResult(ComskipOutcome Outcome, string? EdlPath, string Log);
+/// <param name="Error">Why it failed, in a few words (the Queue tab shows it).</param>
+public sealed record ComskipRunResult(ComskipOutcome Outcome, string? EdlPath, string Log, string? Error = null);
 
 /// <summary>
 /// Launches the external Comskip binary as a child process.
@@ -39,7 +40,9 @@ public sealed class ComskipRunner
         string workDir,
         string mediaPath,
         int timeoutMinutes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<int>? started = null,
+        Func<TimeSpan>? activeTime = null)
     {
         // Defensive: a stray leading/trailing space on a configured path makes it
         // non-rooted on Linux, so Comskip would write its output to a relative dir.
@@ -50,6 +53,7 @@ public sealed class ComskipRunner
 
         Directory.CreateDirectory(workDir);
         ClearOldOutput(workDir, mediaPath, _logger);
+        iniPath = FinishedFileIni(iniPath, workDir, _logger);
 
         var psi = new ProcessStartInfo
         {
@@ -72,19 +76,39 @@ public sealed class ComskipRunner
         try
         {
             process.Start();
+            started?.Invoke(process.Id);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromMinutes(timeoutMinutes));
+            var timeout = TimeSpan.FromMinutes(timeoutMinutes);
+            if (activeTime is null)
+            {
+                timeoutCts.CancelAfter(timeout);
+                await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                // Timed on the time it actually ran: a scan paused from the Queue tab isn't timed out.
+                var exited = process.WaitForExitAsync(timeoutCts.Token);
+                while (!exited.IsCompleted)
+                {
+                    await Task.WhenAny(exited, Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!exited.IsCompleted && activeTime() > timeout)
+                    {
+                        timeoutCts.Cancel();
+                    }
+                }
 
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+                await exited.ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning("Comskip timed out after {Minutes} min on {Media}", timeoutMinutes, mediaPath);
             TryKill(process);
-            return new ComskipRunResult(ComskipOutcome.Failed, null, log.ToString());
+            return new ComskipRunResult(ComskipOutcome.Failed, null, log.ToString(), $"Timed out after {timeoutMinutes} min");
         }
         catch (OperationCanceledException)
         {
@@ -95,7 +119,7 @@ public sealed class ComskipRunner
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to launch Comskip for {Media}", mediaPath);
-            return new ComskipRunResult(ComskipOutcome.Failed, null, log.ToString());
+            return new ComskipRunResult(ComskipOutcome.Failed, null, log.ToString(), "Comskip couldn't be started: " + ex.Message);
         }
 
         var exitCode = TryGetExitCode(process);
@@ -114,7 +138,7 @@ public sealed class ComskipRunner
                 + "recording or a Comskip config problem. Will retry later.\nComskip args: --ini={Ini} --output={Work}\n"
                 + "--- Comskip output (tail) ---\n{Output}",
                 mediaPath, exitCode, iniPath, workDir, Tail(log.ToString(), 20));
-            return new ComskipRunResult(ComskipOutcome.Failed, null, log.ToString());
+            return new ComskipRunResult(ComskipOutcome.Failed, null, log.ToString(), $"Comskip wrote no .edl (exit code {exitCode?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "?"})");
         }
 
         _logger.LogDebug("Comskip finished for {Media} (exit code {ExitCode})", mediaPath, exitCode);
@@ -144,6 +168,45 @@ public sealed class ComskipRunner
             {
                 logger.LogWarning(ex, "Could not remove an earlier scan's {File}", f);
             }
+        }
+    }
+
+    // Every live_tv=N setting, not live_tv_retries (Comskip finds "live_tv=" anywhere in the
+    // file, a comment included, so every match is changed).
+    private static readonly System.Text.RegularExpressions.Regex LiveTvSetting =
+        new(@"(?<![A-Za-z_])live_tv\s*=\s*\d+", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The ini for scanning a finished file: the configured one with <c>live_tv=0</c>, written to the
+    /// work folder (rewritten only when it changes). The live scan needs <c>live_tv=1</c> to follow a
+    /// recording as it grows, but with it Comskip also waits at the end of a FINISHED file for more
+    /// to arrive: 4 s, <c>live_tv_retries</c> times (16 here, so 64 s of nothing per scan, seen
+    /// 2026-11-01). Without it the .edl and .txt came out byte for byte the same, a minute sooner.
+    /// Falls back to the configured ini if the copy can't be made.
+    /// </summary>
+    internal static string FinishedFileIni(string iniPath, string workDir, ILogger logger)
+    {
+        try
+        {
+            var text = File.ReadAllText(iniPath);
+            if (!LiveTvSetting.IsMatch(text))
+            {
+                return iniPath; // off already (Comskip's default)
+            }
+
+            var finished = LiveTvSetting.Replace(text, "live_tv=0");
+            var target = Path.Combine(workDir, "comskip-finished-files.ini");
+            if (!File.Exists(target) || File.ReadAllText(target) != finished)
+            {
+                File.WriteAllText(target, finished);
+            }
+
+            return target;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not make a live_tv=0 copy of {Ini}; scanning with it as is (each scan waits about a minute at the end)", iniPath);
+            return iniPath;
         }
     }
 

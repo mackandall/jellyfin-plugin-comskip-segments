@@ -103,12 +103,48 @@
         #ComskipDashboardPage .csd-progress { height: 10px; background: rgba(255,255,255,0.14); border-radius: 5px; overflow: hidden; margin: 10px 0; }
         #ComskipDashboardPage .csd-progress div { height: 100%; background: #00a4dc; width: 0; }
         #ComskipDashboardPage .csd-hidden { display: none !important; }
+        #ComskipDashboardPage .csd-tabs { display: flex; gap: 8px; margin: 0.6em 0 1em; flex-wrap: wrap; }
+        #ComskipDashboardPage .csd-tab { min-height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.25); background: transparent; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+        #ComskipDashboardPage .csd-tab[aria-selected="true"] { border-color: #00a4dc; background: rgba(0,164,220,0.18); }
+        #ComskipDashboardPage .csd-count { background: #00a4dc; color: #001018; font-weight: 700; font-size: 0.8em; border-radius: 10px; padding: 1px 8px; }
+        #ComskipDashboardPage .csd-sec { margin-top: 26px; }
+        #ComskipDashboardPage .csd-sec-h { display: flex; align-items: baseline; gap: 12px; border-bottom: 2px solid #00a4dc; padding-bottom: 6px; flex-wrap: wrap; }
+        #ComskipDashboardPage .csd-sec-h h3 { margin: 0; font-size: 1.45em; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        #ComskipDashboardPage .csd-num { background: #00a4dc; color: #001018; width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 0.65em; font-weight: 700; }
+        #ComskipDashboardPage .csd-sec-h .csd-sum { margin-left: auto; opacity: 0.7; font-variant-numeric: tabular-nums; }
+        #ComskipDashboardPage .csd-workers { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-top: 14px; }
+        #ComskipDashboardPage .csd-worker { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 14px 16px; border-left: 4px solid #00a4dc; display: grid; gap: 8px; }
+        #ComskipDashboardPage .csd-worker.paused { border-left-color: #f5a524; }
+        #ComskipDashboardPage .csd-worker.paused .csd-progress div { background: #f5a524; }
+        #ComskipDashboardPage .csd-qbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; padding: 10px 14px; border-radius: 8px; background: rgba(255,255,255,0.06); }
+        #ComskipDashboardPage .csd-qbar.paused { background: rgba(245,165,36,0.14); color: #ffe0b2; }
+        #ComskipDashboardPage .csd-worker.idle { border-left-color: rgba(255,255,255,0.2); opacity: 0.7; }
+        #ComskipDashboardPage .csd-wlab { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+        #ComskipDashboardPage .csd-wpath { opacity: 0.65; font-size: 0.85em; word-break: break-all; }
+        #ComskipDashboardPage .csd-wmeta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.9em; font-variant-numeric: tabular-nums; align-items: center; }
+        #ComskipDashboardPage .csd-wmeta b { font-weight: 600; }
+        #ComskipDashboardPage .csd-pill { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 0.82em; background: rgba(255,255,255,0.12); white-space: nowrap; }
+        #ComskipDashboardPage .csd-pill.manual { background: #1e3a4a; color: #9fdcf5; }
+        #ComskipDashboardPage .csd-pill.recording { background: #2a2140; color: #c9b6ff; }
+        #ComskipDashboardPage .csd-pill.trim { background: #4a3410; color: #ffd08a; }
+        #ComskipDashboardPage .csd-pill.ok { background: #173326; color: #9be3bf; }
+        #ComskipDashboardPage .csd-pill.fail { background: #3a1e1e; color: #f5b0b0; white-space: normal; }
+        #ComskipDashboardPage .csd-pill.wait { background: rgba(245,165,36,0.16); color: #ffd08a; }
+        #ComskipDashboardPage .csd-acts { display: flex; gap: 6px; justify-content: flex-end; }
+        #ComskipDashboardPage .csd-btn.sm { min-height: 32px; padding: 0 10px; font-size: 0.9em; white-space: nowrap; }
+        #ComskipDashboardPage .csd-more { opacity: 0.8; padding: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+        #ComskipDashboardPage .csd-more button { background: none; border: 0; color: #00a4dc; font: inherit; cursor: pointer; padding: 0; text-decoration: underline; }
     </style>
     <div data-role="content">
         <div class="content-primary">
             <div class="csd-row" style="justify-content: space-between;">
                 <h2 style="margin: 0.4em 0;">Commercial segments</h2>
                 <a is="emby-linkbutton" class="button-link" href="#/configurationpage?name=Comskip%20Commercial%20Segments">Settings</a>
+            </div>
+
+            <div class="csd-tabs" id="CsdTabs" role="tablist">
+                <button type="button" class="csd-tab" role="tab" data-tab="list" aria-selected="true">Recordings</button>
+                <button type="button" class="csd-tab" role="tab" data-tab="queue" aria-selected="false">Queue <span class="csd-count csd-hidden" id="CsdQueueCount"></span></button>
             </div>
 
             <!-- Every recording -->
@@ -137,6 +173,48 @@
                         <button type="button" class="csd-btn" id="CsdNext">Next</button>
                     </span>
                 </div>
+            </div>
+
+            <!-- The Comskip queue -->
+            <div id="CsdQueue" class="csd-hidden">
+                <div class="fieldDescription">What Comskip is scanning now, what's waiting (in order, kept across server restarts), and what it finished lately.</div>
+                <div class="csd-qbar" id="CsdQBar">
+                    <span id="CsdQBarText" class="csd-grow"></span>
+                    <button type="button" class="csd-btn" id="CsdQPause"></button>
+                </div>
+
+                <section class="csd-sec">
+                    <div class="csd-sec-h"><h3><span class="csd-num">1</span>Now scanning</h3><span class="csd-sum" id="CsdQRunSum"></span></div>
+                    <div class="csd-workers" id="CsdQRunning"></div>
+                </section>
+
+                <section class="csd-sec">
+                    <div class="csd-sec-h"><h3><span class="csd-num">2</span>Waiting</h3><span class="csd-sum" id="CsdQWaitSum"></span></div>
+                    <div class="csd-row" style="margin: 14px 0 4px;">
+                        <span class="csd-sub" id="CsdQResult"></span>
+                        <span class="csd-grow"></span>
+                        <button type="button" class="csd-btn" id="CsdQClearMine">Remove those you started</button>
+                        <button type="button" class="csd-btn danger" id="CsdQClear">Clear the queue…</button>
+                    </div>
+                    <div class="csd-tablebox">
+                        <table class="csd-table" style="min-width: 760px;">
+                            <thead><tr><th>#</th><th>Recording</th><th>Library</th><th>Why it's queued</th><th>Queued</th><th></th></tr></thead>
+                            <tbody id="CsdQWaiting"></tbody>
+                        </table>
+                        <div class="csd-more csd-hidden" id="CsdQWaitMore"></div>
+                    </div>
+                </section>
+
+                <section class="csd-sec">
+                    <div class="csd-sec-h"><h3><span class="csd-num">3</span>Recently finished</h3><span class="csd-sum" id="CsdQDoneSum"></span></div>
+                    <div class="csd-tablebox">
+                        <table class="csd-table" style="min-width: 760px;">
+                            <thead><tr><th>Recording</th><th>Why</th><th>Result</th><th>Took</th><th>Finished</th><th></th></tr></thead>
+                            <tbody id="CsdQDone"></tbody>
+                        </table>
+                        <div class="csd-more csd-hidden" id="CsdQDoneMore"></div>
+                    </div>
+                </section>
             </div>
 
             <!-- One recording -->
@@ -304,7 +382,8 @@
                 ["all", "All"], ["detected", "With commercials"], ["none", "No commercials"],
                 ["edited", "Edited by hand"], ["cut", "Cut"], ["failed", "Scan failed"]
             ];
-            var state = { rows: [], filter: "all", search: "", page: 0 };
+            var state = { rows: [], filter: "all", search: "", page: 0, tab: "list" };
+            var queue = { data: null, all: false, doneShown: 25, timer: null };
             var ed = null;      // the recording open in the editor
             var poll = null;
 
@@ -511,16 +590,251 @@
             // ---- One recording ----
 
             function show(editor) {
-                $("#CsdList").classList.toggle("csd-hidden", editor);
+                $("#CsdTabs").classList.toggle("csd-hidden", editor);
+                $("#CsdList").classList.toggle("csd-hidden", editor || state.tab !== "list");
+                $("#CsdQueue").classList.toggle("csd-hidden", editor || state.tab !== "queue");
                 $("#CsdEditor").classList.toggle("csd-hidden", !editor);
+                $("#CsdBack").textContent = state.tab === "queue" ? "‹ Queue" : "‹ All recordings";
+                page.querySelectorAll("[data-tab]").forEach(function (t) {
+                    t.setAttribute("aria-selected", String(t.getAttribute("data-tab") === state.tab));
+                });
+                stopQueue();
                 if (!editor) {
                     stopPlay(true);
                     clearTimeout(ov.timer);
                     stopPolling();
                     ed = null;
-                    loadList();
+                    if (state.tab === "queue") {
+                        loadQueue();
+                    } else {
+                        loadList();
+                        loadQueue(true);
+                    }
                 }
             }
+
+            $("#CsdTabs").addEventListener("click", function (e) {
+                var t = e.target.closest("[data-tab]");
+                if (t && t.getAttribute("data-tab") !== state.tab) {
+                    state.tab = t.getAttribute("data-tab");
+                    show(false);
+                }
+            });
+
+            // ---- The queue ----
+
+            var REASONS = {
+                manual: ["Started by you", "manual"],
+                recording: ["New recording", "recording"],
+                library: ["Library check", ""],
+                "segment-scan": ["Media Segment Scan", ""],
+                trim: ["After a trim", "trim"]
+            };
+            var STAGES = {
+                starting: "Starting", audio: "Checking the audio format", "program-start": "Looking for the program start",
+                comskip: "Comskip is scanning", saving: "Saving the breaks"
+            };
+
+            function reasonPill(r) {
+                var x = REASONS[r] || [r, ""];
+                return '<span class="csd-pill ' + x[1] + '">' + esc(x[0]) + "</span>";
+            }
+
+            function timeOf(iso) {
+                var d = new Date(iso), today = new Date();
+                var t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                return d.toDateString() === today.toDateString() ? t : d.toLocaleDateString() + " " + t;
+            }
+
+            // "about 55 min", "about 2 h 10 min"
+            function about(seconds) {
+                var m = Math.max(1, Math.round(seconds / 60));
+                return "about " + (m >= 60 ? Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min");
+            }
+
+            function stopQueue() {
+                clearTimeout(queue.timer);
+                queue.timer = null;
+            }
+
+            // countOnly: just the tab's number (the recordings list is showing).
+            function loadQueue(countOnly) {
+                stopQueue();
+                return api("GET", "ComskipSegments/Queue" + (queue.all ? "?all=true" : "")).then(function (q) {
+                    queue.data = q;
+                    var n = q.Running.length + q.WaitingCount + q.Recording.length;
+                    $("#CsdQueueCount").textContent = n;
+                    $("#CsdQueueCount").classList.toggle("csd-hidden", n === 0);
+                    if (!countOnly && state.tab === "queue" && !ed) {
+                        renderQueue();
+                        queue.timer = setTimeout(loadQueue, 3000);
+                    }
+                }, function () {
+                    if (!countOnly && state.tab === "queue" && !ed) {
+                        $("#CsdQRunning").innerHTML = '<div class="csd-sub">Couldn\'t load the queue.</div>';
+                        queue.timer = setTimeout(loadQueue, 10000);
+                    }
+                });
+            }
+
+            function renderQueue() {
+                var q = queue.data;
+                var busy = {};
+                q.Running.forEach(function (j) { busy[j.Worker] = j; });
+                $("#CsdQRunSum").textContent = q.Running.length + " of " + q.Workers + " worker" + (q.Workers === 1 ? "" : "s") + " busy";
+                var cards = [];
+                for (var w = 1; w <= Math.max(q.Workers, q.Running.length); w++) {
+                    var j = busy[w];
+                    if (!j) {
+                        cards.push('<div class="csd-worker idle"><span class="csd-wlab">Worker ' + w + "</span><div>" + (q.Paused ? "Free · the queue is paused" : "Free") + "</div></div>");
+                        continue;
+                    }
+                    var pct = j.Progress != null ? Math.round(j.Progress * 100) : null;
+                    var paused = j.PausedSeconds != null;
+                    cards.push('<div class="csd-worker' + (paused ? " paused" : "") + '">'
+                        + '<span class="csd-wlab">Worker ' + w + " · " + (paused ? "Paused" : esc(STAGES[j.Stage] || j.Stage)) + "</span>"
+                        + '<div style="font-weight:600">' + esc(j.Name) + "</div>"
+                        + (j.Folder ? '<div class="csd-wpath">' + esc(j.Folder) + "</div>" : "")
+                        + (j.Stage === "comskip" ? '<div class="csd-progress" style="margin:2px 0" aria-label="' + (pct == null ? "progress not known yet" : pct + " percent") + '"><div style="width:' + (pct || 0) + '%"></div></div>' : "")
+                        + '<div class="csd-wmeta">'
+                        + (pct != null ? "<span><b>" + pct + "%</b> through the file</span>" : "")
+                        + (paused ? '<span class="csd-pill wait">Paused ' + clock(j.PausedSeconds) + "</span>" : "<span>Running <b>" + clock(j.Seconds) + "</b></span>")
+                        + (j.LeftSeconds != null ? "<span><b>" + about(j.LeftSeconds) + "</b> left" + (paused ? " once resumed" : "") + "</span>" : "")
+                        + reasonPill(j.Reason) + "</div>"
+                        + '<div class="csd-row">'
+                        + (paused ? '<button type="button" class="csd-btn sm primary" data-qresume="' + j.Id + '">Resume</button>'
+                            : '<button type="button" class="csd-btn sm" data-qpause="' + j.Id + '"' + (j.CanPause ? "" : ' disabled title="Only Comskip itself can be paused; this step is short"') + ">Pause</button>")
+                        + '<button type="button" class="csd-btn sm danger" data-qcancel="' + j.Id + '" data-name="' + esc(j.Name) + '">Cancel scan</button></div>'
+                        + "</div>");
+                }
+                $("#CsdQRunning").innerHTML = cards.join("");
+                $("#CsdQBar").classList.toggle("paused", q.Paused);
+                $("#CsdQBarText").textContent = q.Paused
+                    ? "The queue is paused: nothing new starts until you resume it (also after a server restart)." + (q.Running.length ? " The scans running now carry on unless you pause them too." : "")
+                    : "The queue is running: a free worker takes the next waiting scan.";
+                $("#CsdQPause").textContent = q.Paused ? "Resume the queue" : "Pause the queue";
+                $("#CsdQPause").classList.toggle("primary", q.Paused);
+                $("#CsdQPause").disabled = false;
+
+                var total = q.WaitingCount + q.Recording.length;
+                $("#CsdQWaitSum").textContent = total === 0 ? "Nothing waiting"
+                    : q.WaitingCount + " waiting" + (q.Recording.length ? " · " + q.Recording.length + " still recording" : "")
+                        + (q.AverageSeconds && q.WaitingCount ? " · " + about(q.AverageSeconds * q.WaitingCount / Math.max(1, q.Workers)) + " at the current pace" : "");
+                var mine = q.Waiting.concat(q.Recording).some(function (e) { return e.Reason === "manual"; }) || q.WaitingCount > q.Waiting.length;
+                $("#CsdQClearMine").disabled = !mine;
+                $("#CsdQClear").disabled = total === 0;
+                var rows = q.Waiting.map(function (e, i) {
+                    return "<tr>"
+                        + '<td class="csd-sub" style="width:40px">' + (i + 1) + "</td>"
+                        + '<td><div style="font-weight:600">' + esc(e.Name) + "</div></td>"
+                        + '<td class="csd-sub" title="' + esc(e.Folder || "") + '">' + esc(e.Library || "") + "</td>"
+                        + "<td>" + reasonPill(e.Reason) + "</td>"
+                        + '<td class="csd-sub" style="white-space:nowrap">' + timeOf(e.QueuedUtc) + "</td>"
+                        + '<td><div class="csd-acts">' + (i > 0 ? '<button type="button" class="csd-btn sm" data-qnext="' + e.Id + '">Scan next</button>' : "")
+                        + '<button type="button" class="csd-btn sm" data-qremove="' + e.Id + '">Remove</button></div></td>'
+                        + "</tr>";
+                }).concat(q.Recording.map(function (e) {
+                    return "<tr>"
+                        + '<td class="csd-sub">–</td>'
+                        + '<td><div style="font-weight:600">' + esc(e.Name) + '</div><div class="csd-sub">Still recording · joins the queue when it ends</div></td>'
+                        + '<td class="csd-sub" title="' + esc(e.Folder || "") + '">' + esc(e.Library || "") + "</td>"
+                        + '<td><span class="csd-pill wait">Waiting for the recording to end</span> ' + reasonPill(e.Reason) + "</td>"
+                        + '<td class="csd-sub" style="white-space:nowrap">' + timeOf(e.QueuedUtc) + "</td>"
+                        + '<td><div class="csd-acts"><button type="button" class="csd-btn sm" data-qremove="' + e.Id + '">Remove</button></div></td>'
+                        + "</tr>";
+                }));
+                $("#CsdQWaiting").innerHTML = rows.length ? rows.join("") : '<tr><td colspan="6" class="csd-sub">Nothing waiting.</td></tr>';
+                var hidden = q.WaitingCount - q.Waiting.length;
+                $("#CsdQWaitMore").classList.toggle("csd-hidden", hidden <= 0 && !queue.all);
+                $("#CsdQWaitMore").innerHTML = hidden > 0 ? '<button type="button" data-qall="1">Show the other ' + hidden + "</button>"
+                    : queue.all ? '<button type="button" data-qall="0">Show only the first 100</button>' : "";
+
+                $("#CsdQDoneSum").textContent = "Last 24 hours: " + q.Done24 + " scanned" + (q.Failed24 ? " · " + q.Failed24 + " failed" : "");
+                var done = q.History.slice(0, queue.doneShown);
+                $("#CsdQDone").innerHTML = done.length ? done.map(function (h) {
+                    var res = h.Result === "breaks" ? '<span class="csd-pill ok">' + h.Breaks + " break" + (h.Breaks === 1 ? "" : "s") + "</span>"
+                        : h.Result === "none" ? '<span class="csd-pill">No commercials</span>'
+                        : h.Result === "stopped" ? '<span class="csd-pill wait">Cancelled</span>'
+                        : h.Result === "skipped" ? '<span class="csd-pill">Skipped: ' + esc(h.Detail || "") + "</span>"
+                        : '<span class="csd-pill fail">Failed: ' + esc(h.Detail || "") + "</span>";
+                    var note = (h.Result === "breaks" || h.Result === "none" || h.Result === "stopped") && h.Detail ? '<div class="csd-sub">' + esc(h.Detail) + "</div>" : "";
+                    var took = (new Date(h.FinishedUtc) - new Date(h.StartedUtc)) / 1000;
+                    var ok = h.Result === "breaks" || h.Result === "none";
+                    return "<tr>"
+                        + '<td><div style="font-weight:600">' + esc(h.Name) + "</div>" + note + "</td>"
+                        + "<td>" + reasonPill(h.Reason) + "</td>"
+                        + "<td>" + res + "</td>"
+                        + '<td class="csd-mono">' + clock(took) + "</td>"
+                        + '<td class="csd-sub" style="white-space:nowrap">' + timeOf(h.FinishedUtc) + "</td>"
+                        + '<td><div class="csd-acts">'
+                        + (ok ? '<button type="button" class="csd-btn sm" data-open="' + h.Id + '">Open in editor</button>'
+                            : '<button type="button" class="csd-btn sm" data-qagain="' + h.Id + '">Scan again</button>')
+                        + "</div></td></tr>";
+                }).join("") : '<tr><td colspan="6" class="csd-sub">Nothing finished yet.</td></tr>';
+                var more = q.History.length - done.length;
+                $("#CsdQDoneMore").classList.toggle("csd-hidden", more <= 0);
+                $("#CsdQDoneMore").innerHTML = more > 0 ? '<button type="button" data-qdonemore="1">Show more (' + more + ' more; the last ' + q.History.length + " are kept)</button>" : "";
+            }
+
+            function queueAction(path, btn) {
+                if (btn) {
+                    btn.disabled = true;
+                }
+                return api("POST", path).then(function (r) {
+                    $("#CsdQResult").textContent = r.Message;
+                    return loadQueue();
+                }, function () {
+                    $("#CsdQResult").textContent = "That didn't work.";
+                    if (btn) {
+                        btn.disabled = false;
+                    }
+                });
+            }
+
+            $("#CsdQueue").addEventListener("click", function (e) {
+                var b;
+                if ((b = e.target.closest("[data-qcancel]"))) {
+                    if (window.confirm("Cancel the scan of " + b.getAttribute("data-name") + "? It keeps the breaks it had (if any).")) {
+                        queueAction("ComskipSegments/Queue/" + b.getAttribute("data-qcancel") + "/Cancel", b);
+                    }
+                } else if ((b = e.target.closest("[data-qpause]"))) {
+                    queueAction("ComskipSegments/Queue/" + b.getAttribute("data-qpause") + "/Pause", b);
+                } else if ((b = e.target.closest("[data-qresume]"))) {
+                    queueAction("ComskipSegments/Queue/" + b.getAttribute("data-qresume") + "/Resume", b);
+                } else if ((b = e.target.closest("[data-qnext]"))) {
+                    queueAction("ComskipSegments/Queue/" + b.getAttribute("data-qnext") + "/Next", b);
+                } else if ((b = e.target.closest("[data-qremove]"))) {
+                    queueAction("ComskipSegments/Queue/" + b.getAttribute("data-qremove") + "/Remove", b);
+                } else if ((b = e.target.closest("[data-qagain]"))) {
+                    b.disabled = true;
+                    api("POST", "ComskipSegments/Detect/" + b.getAttribute("data-qagain") + "?force=true").then(function (r) {
+                        $("#CsdQResult").textContent = r.Message;
+                        loadQueue();
+                    }, function () {
+                        b.disabled = false;
+                        $("#CsdQResult").textContent = "Couldn't queue it.";
+                    });
+                } else if ((b = e.target.closest("[data-open]"))) {
+                    openEditor(b.getAttribute("data-open"));
+                } else if ((b = e.target.closest("[data-qall]"))) {
+                    queue.all = b.getAttribute("data-qall") === "1";
+                    loadQueue();
+                } else if ((b = e.target.closest("[data-qdonemore]"))) {
+                    queue.doneShown += 50;
+                    renderQueue();
+                }
+            });
+            $("#CsdQPause").addEventListener("click", function () {
+                queueAction("ComskipSegments/Queue/" + (queue.data && queue.data.Paused ? "Resume" : "Pause"), this);
+            });
+            $("#CsdQClearMine").addEventListener("click", function () {
+                queueAction("ComskipSegments/Queue/Clear?reason=manual", this);
+            });
+            $("#CsdQClear").addEventListener("click", function () {
+                if (window.confirm("Take every waiting scan out of the queue? The scans running now go on.")) {
+                    queueAction("ComskipSegments/Queue/Clear", this);
+                }
+            });
 
             function openEditor(id) {
                 show(true);
@@ -2092,7 +2406,10 @@
             page.addEventListener("pageshow", function () {
                 show(false);
             });
-            page.addEventListener("pagehide", stopPolling);
+            page.addEventListener("pagehide", function () {
+                stopPolling();
+                stopQueue();
+            });
         })();
     </script>
 </div>

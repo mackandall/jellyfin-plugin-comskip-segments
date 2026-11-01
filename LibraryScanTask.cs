@@ -140,7 +140,7 @@ public sealed class LibraryScanTask : IScheduledTask
         foreach (var item in eligible)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _manager.Enqueue(item.Id);
+            _manager.Enqueue(item.Id, reason: ScanReason.LibraryCheck);
             done++;
             progress.Report(eligible.Count == 0 ? 100 : (double)done / eligible.Count * 100);
         }

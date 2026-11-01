@@ -208,25 +208,10 @@ public sealed class ComskipSegmentsController : ControllerBase
             ? $"Used the existing .edl beside the video: {record.Breaks.Count} commercial break(s)."
             : "Used the existing .edl beside the video.";
 
-    private async Task<DetectionManager.EnqueueResult> Enqueue(BaseItem item, bool force, CancellationToken cancellationToken)
-    {
-        if (force)
-        {
-            try
-            {
-                var segmentManager = _serviceProvider.GetRequiredService<IMediaSegmentManager>();
-                await segmentManager.DeleteSegmentsAsync(item.Id, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Could not clear existing segments before forced re-detect of {ItemId}", item.Id);
-            }
-
-            _store.Remove(item.Id);
-        }
-
-        return _manager.Enqueue(item.Id, force);
-    }
+    // A forced re-scan keeps the breaks the recording has until the new ones are in (the scan
+    // replaces them when it finishes), so a re-scan cancelled from the Queue tab loses nothing.
+    private Task<DetectionManager.EnqueueResult> Enqueue(BaseItem item, bool force, CancellationToken cancellationToken) =>
+        Task.FromResult(_manager.Enqueue(item.Id, force, ScanReason.Manual));
 
     public sealed record ClearResponse(bool Cleared, string Message);
 

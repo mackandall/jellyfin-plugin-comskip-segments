@@ -188,6 +188,6 @@ public sealed class AudioTrimController : ControllerBase
         // would silently override that filter as a side effect of an unrelated feature.
         // A non-forced enqueue re-applies the same gate the item passed (or didn't)
         // originally.
-        _detectionManager.Enqueue(itemId, force: false);
+        _detectionManager.Enqueue(itemId, force: false, reason: ScanReason.AfterTrim);
     }
 }
