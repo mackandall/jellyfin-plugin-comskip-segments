@@ -41,7 +41,7 @@ public sealed class CommercialCutStore
     public CommercialCutStore(ILogger<CommercialCutStore> logger, IApplicationPaths applicationPaths)
     {
         _logger = logger;
-        var dataFolder = Path.Combine(applicationPaths.PluginsPath, "ComskipSegments");
+        var dataFolder = PluginDataFolder.Get(applicationPaths, _logger);
         Directory.CreateDirectory(dataFolder);
         _path = Path.Combine(dataFolder, "commercial-cuts.json");
         _records = Load();

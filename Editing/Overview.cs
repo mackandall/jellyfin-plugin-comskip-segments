@@ -43,7 +43,7 @@ public sealed partial class OverviewService
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
-        _folder = Path.Combine(paths.PluginsPath, "ComskipSegments", "overview");
+        _folder = Path.Combine(PluginDataFolder.Get(paths, _logger), "overview");
         Directory.CreateDirectory(_folder);
     }
 

@@ -52,7 +52,7 @@ public sealed class ProgramStartStore
     public ProgramStartStore(ILogger<ProgramStartStore> logger, IApplicationPaths applicationPaths)
     {
         _logger = logger;
-        var dataFolder = Path.Combine(applicationPaths.PluginsPath, "ComskipSegments");
+        var dataFolder = PluginDataFolder.Get(applicationPaths, _logger);
         Directory.CreateDirectory(dataFolder);
         _path = Path.Combine(dataFolder, "program-start.json");
         _state = Load();

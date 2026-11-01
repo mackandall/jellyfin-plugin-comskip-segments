@@ -87,8 +87,8 @@ public sealed class WebOverlayPatcher
 
         try
         {
-            // Written in place, so a one-time chown of the file is enough; the copy goes in the plugin's folder.
-            var backup = Path.Combine(_paths.PluginsPath, "ComskipSegments", "index.html.comskip-backup");
+            // Written in place, so a one-time chown of the file is enough; the copy goes in the plugin's data folder.
+            var backup = Path.Combine(PluginDataFolder.Get(_paths, _logger), "index.html.comskip-backup");
             Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
             File.WriteAllText(backup, html);
             File.WriteAllText(path, patched);

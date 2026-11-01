@@ -29,7 +29,7 @@ public sealed class TrimBackups
     public TrimBackups(ILogger<TrimBackups> logger, IApplicationPaths applicationPaths)
     {
         _logger = logger;
-        var dataFolder = Path.Combine(applicationPaths.PluginsPath, "ComskipSegments");
+        var dataFolder = PluginDataFolder.Get(applicationPaths, _logger);
         Directory.CreateDirectory(dataFolder);
         _path = Path.Combine(dataFolder, "trim-backups.json");
         _expiries = Load();

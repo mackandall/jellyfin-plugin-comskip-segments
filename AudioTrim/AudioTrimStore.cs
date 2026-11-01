@@ -47,7 +47,7 @@ public sealed class AudioTrimStore
     {
         _logger = logger;
 
-        var dataFolder = Path.Combine(applicationPaths.PluginsPath, "ComskipSegments");
+        var dataFolder = PluginDataFolder.Get(applicationPaths, _logger);
         Directory.CreateDirectory(dataFolder);
         _path = Path.Combine(dataFolder, "audio-trim-state.json");
 
