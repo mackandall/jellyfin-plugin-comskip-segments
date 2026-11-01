@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/icon.png",
     "versions": [
       {
+        "version": "1.3.3.0",
+        "changelog": "Queue tab on the Commercial segments dashboard: the scans running now (progress, time left, pause, cancel), the ones waiting in order (why each is queued, Scan next, Remove, Clear, pause the queue) and the last 200 finished; the queue is kept across restarts. Each scan of a finished recording is about a minute faster (live_tv=0 for finished files), with the same breaks. A re-scan keeps the old breaks until the new ones are in. The plugin's state moves to <data>/comskip-segments: updating a manually installed copy from the catalog no longer deletes it.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.3.0/jellyfin-plugin-comskip-segments_1.3.3.0.zip",
+        "checksum": "dc776c51c9905e62397e1969bd95c363",
+        "timestamp": "2026-11-01T22:22:00.0000000Z"
+      },
+      {
         "version": "1.3.2.0",
         "changelog": "Fixes: a live scan no longer shows an earlier scan's breaks for the same file name; a recording Jellyfin restarted part-way gets its live scan and live skip; the web overlay asks for live breaks with the recording being played. The .edl beside a moved or newly added video (and its other versions) is imported when it's added, not at the next Media Segment Scan; a folder left with no video once its kept original is deleted is removed.",
         "targetAbi": "12.0.0.0",
