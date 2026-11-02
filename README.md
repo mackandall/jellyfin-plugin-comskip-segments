@@ -74,8 +74,8 @@ plugins (Episode History, JellyDVR Space, Schedule and Live, XMLTV Guide Cleaner
    drop the DLL, `icon.png`, and `meta.json` in (or run `sudo ./install.sh`, which does this,
    removes other installed versions and restarts Jellyfin):
    ```
-   sudo mkdir -p "/var/lib/jellyfin/plugins/Comskip Commercial Segments_1.3.3.0"
-   sudo cp bin/Release/net10.0/Jellyfin.Plugin.ComskipSegments.dll icon.png meta.json "/var/lib/jellyfin/plugins/Comskip Commercial Segments_1.3.3.0/"
+   sudo mkdir -p "/var/lib/jellyfin/plugins/Comskip Commercial Segments_1.3.4.0"
+   sudo cp bin/Release/net10.0/Jellyfin.Plugin.ComskipSegments.dll icon.png meta.json "/var/lib/jellyfin/plugins/Comskip Commercial Segments_1.3.4.0/"
    ```
 3. Restart Jellyfin.
 
@@ -143,10 +143,14 @@ that case rather than being hidden outright.
 - **Archives with an .edl already:** when a video has an `.edl` beside it (same name,
   `.edl` extension) written by another program — SageTV, Channels DVR, Emby, a standalone
   Comskip — the plugin uses it instead of running Comskip, automatically (on Jellyfin's
-  Media Segment Scan) and for manual scans alike. Both EDL styles are understood:
+  Media Segment Scan) and for folder rescans. Both EDL styles are understood:
   Comskip's `0` (cut) and Kodi/Channels-style `3` (commercial break). Such a file is never
   overwritten; "Also place a copy of the .edl next to the recording" only replaces `.edl`
-  files this plugin wrote itself.
+  files this plugin wrote itself. A forced rescan of **one** recording (dashboard, item menu)
+  runs Comskip anyway and renames that `.edl` to `<name>.edl.old` (not deleted; setting "A
+  rescan I ask for runs Comskip even if another program's .edl is there", on by default). That
+  also covers `.edl` files written by versions before 1.3.3.0, which the plugin no longer
+  recognises as its own after the 1.3.2.0 catalog update lost its list of them.
   Jellyfin's library scan doesn't ask for segments, so after adding a library (or files)
   that come with `.edl`s, run Dashboard → Scheduled Tasks → **Media Segment Scan** once
   rather than wait for it; until then those videos show no commercials.
@@ -284,6 +288,64 @@ Cutting the commercials out: what it will do, the cut running, and done (with Un
 
 ![Cut done](docs/screenshots/cut-done.jpg)
 
+### Repeated ads (optional)
+
+Settings → **Repeated ads**. The repeat-ad check and learning are off by default.
+
+**Add ads heard in other shows to the breaks.** After each Comskip scan, the plugin makes an
+audio fingerprint of the recording (Chromaprint, through Jellyfin's own ffmpeg, about 15 s, done
+while Comskip runs) and compares it with your other recent recordings. A stretch that also aired
+in a *different* show is an ad, so it's added to the breaks even when Comskip called it show. That
+happens a lot on FAST channels such as Crunchyroll's, which have no logo and no clean black frames
+between ads. When most of one of Comskip's pieces (the stretch between two of its cut points) is
+repeated ads, the whole piece becomes ad, so the break ends where Comskip's cut is.
+
+- Only *other* shows count. A show's own opening and credits repeat every week and would otherwise
+  be cut.
+- Fingerprints take about 115 KB per hour of recording and are kept for 30 days (adjustable). The
+  settings page shows how many there are.
+- *Also update older recordings* gives an older recording the ads it shares with a new one, but
+  only when its breaks are still Comskip's (never ones you edited, cut, or from another program).
+
+In a test on 50 recordings, 61 of 61 stretches added this way were real ads, recovering about a
+minute per Crunchyroll-channel episode.
+
+**Learn from episodes I've edited by hand.** Once a show has two or more episodes whose breaks you
+set by hand on the segments dashboard, its new scans learn from them:
+
+- **Ads you marked:** found again when they air in another episode.
+- **Show you kept:** stretches heard there (openings, endings) are given back to the show when
+  Comskip calls them ads.
+- **Show time:** checked against your episodes' (only for recordings of about the same length).
+  When it comes out well short, Comskip's ad pieces that nothing backs up are given back.
+- **Padding:** the padding you always mark at both ends is marked.
+
+Each hand-edited episode is fingerprinted once and kept for as long as your edit. An episode you
+edited and then cut keeps teaching: its breaks from before the cut are used with a fingerprint of
+the kept original (made while the original is kept, then kept for good).
+
+**Follow the show's break pattern** (on by default; needs learning on). Once three or more of a
+show's edited episodes of about the same length have the same number of breaks, its new scans get
+that many breaks:
+
+- **Where and how long:** each break is looked for near where your episodes have it (from the start
+  of the recording, between your earliest and latest start, widening by up to 2 minutes) and as long
+  as yours (±15 s), with its edges on Comskip's cut points (black frames, silence, scene changes).
+  Of those, the one taking in the most ad and least show wins; ad heard elsewhere counts more than
+  ad only Comskip saw.
+- **Anchored edges:** the few seconds either side of each edge you marked (an eyecatch, the first
+  notes after a break, a channel's "we'll be back" countdown) are looked for in the new recording;
+  when most of your episodes agree on the spot to within a second, that edge is used as is.
+- **A break where your episodes have none** is dropped. When one of the pattern's breaks can't be
+  placed (a finale or special laid out differently), what Comskip found there is kept.
+
+Turn it off for shows whose breaks move around from week to week.
+
+Tested on Witchblade with eight hand-edited episodes, seven of them each predicted from the others:
+Comskip alone got 60–85% of each episode right; learning without the pattern 89–99% (96% on
+average); with the pattern and anchors 96.5–99.9% (98.4% on average). Eleven unedited episodes were
+then checked frame by frame at every break edge: all but three edges right, and those within 15 s.
+
 ## The one file to watch
 
 `ComskipSegmentProvider.cs` is the only file touching the version-sensitive
@@ -309,6 +371,7 @@ be updated together, or Option A installs above break:
 
 | Version | Date | Notes |
 |---|---|---|
+| 1.3.4.0 | 2026-11-02 | **Repeated ads** (optional, Settings): ads heard in other shows are added to the breaks (audio fingerprints, kept 30 days), also to older recordings; **learn from episodes you edited by hand** (also after you cut them): your ads, the show you kept, show time, padding; **follow the show's break pattern**, with edges pinned by eyecatches and countdowns. Queue tab shows live scans; a live scan that ends with the recording is used instead of discarded; fingerprinting waits for Jellyfin's ffmpeg at startup. A forced rescan of one recording runs Comskip even if another program's `.edl` is beside it (renamed `.edl.old`; setting). |
 | 1.3.3.0 | 2026-11-01 | Each scan of a finished recording is about a minute faster: it no longer waits at the end of the file for more to arrive (`live_tv=0` for finished files; live scans keep `live_tv=1`), with the same breaks. **Queue** tab on the Commercial segments dashboard: the scans running now (progress, time left, Stop), the ones waiting in order (why each is queued, Scan next, Remove, Clear) and the last 200 finished; pause the queue or a single scan, cancel a scan. A re-scan keeps the old breaks until the new ones are in. The queue is kept across restarts (it was in memory only: a restart lost every waiting scan). The plugin's state moves to `<data>/comskip-segments` (copied from `<plugins>/ComskipSegments` on first start). Updating a manually installed copy from the catalog deleted that folder and every stored result with it. `install.sh` installs into a versioned folder like the catalog does. |
 | 1.3.2.0 | 2026-10-31 | Fixes: a live scan no longer shows an earlier scan's breaks for the same file name; a recording Jellyfin restarted part-way ("Name - 1.ts") gets its live scan and live skip; the web overlay asks for live breaks with the recording being played. The `.edl` beside a moved or newly added video (and its other versions) is imported when it's added, not at the next Media Segment Scan; a folder left with no video once its kept original is deleted is removed. |
 | 1.3.1.0 | 2026-10-21 | Check a cut: its joins are marked on the timeline, with **‹ Join / Join ›**. **Delete original** per cut recording and **Delete all originals** with the space they take; originals left without their recording are deleted after a day. Kept originals now go after 7 days by default (*Keep the original file as a backup* is off for new installs; an existing setting is kept). Another program's `.edl` stays with the original after a cut. The editor's picture fits the window (or Small/Medium/Large/drag), with the timeline under the controls. Fixes: frames follow quick jumps; the start lands on the first frame. With JellyDVR Space, a moved recording keeps its Undo. |

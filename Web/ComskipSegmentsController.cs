@@ -133,7 +133,7 @@ public sealed class ComskipSegmentsController : ControllerBase
             return BadRequest(new DetectResponse(false, "Item has no resolvable file on disk"));
         }
 
-        var result = await Enqueue(item, force, cancellationToken).ConfigureAwait(false);
+        var result = await Enqueue(item, force, cancellationToken, setAsideOtherEdl: true).ConfigureAwait(false);
         var (queued, message) = result switch
         {
             DetectionManager.EnqueueResult.ImportedEdl => (true, ImportedMessage(itemId)),
@@ -210,8 +210,8 @@ public sealed class ComskipSegmentsController : ControllerBase
 
     // A forced re-scan keeps the breaks the recording has until the new ones are in (the scan
     // replaces them when it finishes), so a re-scan cancelled from the Queue tab loses nothing.
-    private Task<DetectionManager.EnqueueResult> Enqueue(BaseItem item, bool force, CancellationToken cancellationToken) =>
-        Task.FromResult(_manager.Enqueue(item.Id, force, ScanReason.Manual));
+    private Task<DetectionManager.EnqueueResult> Enqueue(BaseItem item, bool force, CancellationToken cancellationToken, bool setAsideOtherEdl = false) =>
+        Task.FromResult(_manager.Enqueue(item.Id, force, ScanReason.Manual, setAsideOtherEdl));
 
     public sealed record ClearResponse(bool Cleared, string Message);
 

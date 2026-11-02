@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -17,7 +19,8 @@ public enum ComskipOutcome
 }
 
 /// <param name="Error">Why it failed, in a few words (the Queue tab shows it).</param>
-public sealed record ComskipRunResult(ComskipOutcome Outcome, string? EdlPath, string Log, string? Error = null);
+/// <param name="Pieces">Comskip's pieces (see <see cref="ComskipPieces"/>), when asked for and found.</param>
+public sealed record ComskipRunResult(ComskipOutcome Outcome, string? EdlPath, string Log, string? Error = null, IReadOnlyList<ComskipPiece>? Pieces = null);
 
 /// <summary>
 /// Launches the external Comskip binary as a child process.
@@ -42,7 +45,8 @@ public sealed class ComskipRunner
         int timeoutMinutes,
         CancellationToken cancellationToken,
         Action<int>? started = null,
-        Func<TimeSpan>? activeTime = null)
+        Func<TimeSpan>? activeTime = null,
+        bool wantPieces = false)
     {
         // Defensive: a stray leading/trailing space on a configured path makes it
         // non-rooted on Linux, so Comskip would write its output to a relative dir.
@@ -53,7 +57,8 @@ public sealed class ComskipRunner
 
         Directory.CreateDirectory(workDir);
         ClearOldOutput(workDir, mediaPath, _logger);
-        iniPath = FinishedFileIni(iniPath, workDir, _logger);
+        var configuredIni = iniPath;
+        iniPath = FinishedFileIni(iniPath, workDir, _logger, wantPieces);
 
         var psi = new ProcessStartInfo
         {
@@ -142,7 +147,23 @@ public sealed class ComskipRunner
         }
 
         _logger.LogDebug("Comskip finished for {Media} (exit code {ExitCode})", mediaPath, exitCode);
-        return new ComskipRunResult(ComskipOutcome.Ran, edlPath, log.ToString());
+        IReadOnlyList<ComskipPiece>? pieces = null;
+        if (wantPieces)
+        {
+            var logPath = Path.Combine(workDir, baseName + ".log");
+            pieces = ComskipPieces.TryRead(logPath);
+            if (pieces is null or { Count: 0 })
+            {
+                _logger.LogDebug("No piece list in {Log}", logPath);
+            }
+
+            if (!VerboseIsOn(configuredIni))
+            {
+                TryDelete(logPath); // ours, about 350 KB: only the table was wanted
+            }
+        }
+
+        return new ComskipRunResult(ComskipOutcome.Ran, edlPath, log.ToString(), Pieces: pieces);
     }
 
     /// <summary>
@@ -153,7 +174,7 @@ public sealed class ComskipRunner
     internal static void ClearOldOutput(string workDir, string mediaPath, ILogger logger)
     {
         var baseName = Path.GetFileNameWithoutExtension(mediaPath);
-        foreach (var ext in new[] { ".edl", ".txt" })
+        foreach (var ext in new[] { ".edl", ".txt", ".log" })
         {
             var f = Path.Combine(workDir, baseName + ext);
             try
@@ -184,18 +205,26 @@ public sealed class ComskipRunner
     /// 2026-11-01). Without it the .edl and .txt came out byte for byte the same, a minute sooner.
     /// Falls back to the configured ini if the copy can't be made.
     /// </summary>
-    internal static string FinishedFileIni(string iniPath, string workDir, ILogger logger)
+    internal static string FinishedFileIni(string iniPath, string workDir, ILogger logger, bool verbose = false)
     {
         try
         {
             var text = File.ReadAllText(iniPath);
-            if (!LiveTvSetting.IsMatch(text))
+            var finished = LiveTvSetting.IsMatch(text) ? LiveTvSetting.Replace(text, "live_tv=0") : text;
+            if (verbose && !VerboseSetting.Matches(finished).Any(m => m.Groups[1].Value != "0"))
             {
-                return iniPath; // off already (Comskip's default)
+                // Comskip's piece list is only written to its log with verbose on.
+                finished = VerboseSetting.IsMatch(finished)
+                    ? VerboseSetting.Replace(finished, "verbose=" + VerboseForPieces)
+                    : finished.TrimEnd() + "\nverbose=" + VerboseForPieces + "\n";
             }
 
-            var finished = LiveTvSetting.Replace(text, "live_tv=0");
-            var target = Path.Combine(workDir, "comskip-finished-files.ini");
+            if (finished == text)
+            {
+                return iniPath; // nothing to change
+            }
+
+            var target = Path.Combine(workDir, verbose ? "comskip-finished-files-pieces.ini" : "comskip-finished-files.ini");
             if (!File.Exists(target) || File.ReadAllText(target) != finished)
             {
                 File.WriteAllText(target, finished);
@@ -207,6 +236,35 @@ public sealed class ComskipRunner
         {
             logger.LogWarning(ex, "Could not make a live_tv=0 copy of {Ini}; scanning with it as is (each scan waits about a minute at the end)", iniPath);
             return iniPath;
+        }
+    }
+
+    /// <summary>The <c>verbose</c> level asked for when the piece list is wanted (the table is written from level 1).</summary>
+    internal const int VerboseForPieces = 1;
+
+    private static readonly System.Text.RegularExpressions.Regex VerboseSetting =
+        new(@"(?m)^\s*verbose\s*=\s*(\d+)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static bool VerboseIsOn(string iniPath)
+    {
+        try
+        {
+            return VerboseSetting.Matches(File.ReadAllText(iniPath)).Any(m => m.Groups[1].Value != "0");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
         }
     }
 

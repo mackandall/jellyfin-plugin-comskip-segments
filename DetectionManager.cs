@@ -43,6 +43,7 @@ public sealed class DetectionManager : BackgroundService
     private readonly AudioTrimService _audioTrim;
     private readonly ProgramStart.ProgramStartService _programStart;
     private readonly CutTracker _cuts;
+    private readonly RepeatAds.RepeatAdService _repeats;
 
     private readonly ScanQueue _queue;
     private readonly IReadOnlyList<QueueEntry> _restore;
@@ -91,6 +92,7 @@ public sealed class DetectionManager : BackgroundService
         AudioTrimService audioTrim,
         ProgramStart.ProgramStartService programStart,
         CutTracker cuts,
+        RepeatAds.RepeatAdService repeats,
         IApplicationPaths applicationPaths)
     {
         _queue = new ScanQueue(logger, applicationPaths);
@@ -98,6 +100,7 @@ public sealed class DetectionManager : BackgroundService
         _queue.SaveAlso(SavedOutsideQueue);
         _programStart = programStart;
         _cuts = cuts;
+        _repeats = repeats;
         _logger = logger;
         _libraryManager = libraryManager;
         _serviceProvider = serviceProvider;
@@ -136,7 +139,8 @@ public sealed class DetectionManager : BackgroundService
     /// the config page) scans any file.
     /// </summary>
     /// <param name="reason">Why (a <see cref="ScanReason"/>); shown on the Queue tab. Default: manual when forced, else library check.</param>
-    public EnqueueResult Enqueue(Guid itemId, bool force = false, string? reason = null)
+    /// <param name="setAsideOtherEdl">A rescan you asked for of this one recording: another program's .edl beside it is set aside (see <see cref="SetAsideOtherEdl"/>) so Comskip runs.</param>
+    public EnqueueResult Enqueue(Guid itemId, bool force = false, string? reason = null, bool setAsideOtherEdl = false)
     {
         reason ??= force ? ScanReason.Manual : ScanReason.LibraryCheck;
         if (itemId.Equals(Guid.Empty))
@@ -155,6 +159,11 @@ public sealed class DetectionManager : BackgroundService
         {
             _logger.LogDebug("Enqueue skipped: item {ItemId} no longer exists", itemId);
             return EnqueueResult.Skipped;
+        }
+
+        if (force && setAsideOtherEdl && Config.ManualScanIgnoresOtherEdl)
+        {
+            SetAsideOtherEdl(item);
         }
 
         if (TryImportSiblingEdl(item, out _))
@@ -238,6 +247,42 @@ public sealed class DetectionManager : BackgroundService
     {
         var dir = Path.GetDirectoryName(videoPath);
         return dir is null ? null : Path.Combine(dir, Path.GetFileNameWithoutExtension(videoPath) + ".edl");
+    }
+
+    /// <summary>
+    /// Renames the .edl beside the video to "&lt;name&gt;.edl.old" (".old2", ... if taken) when it
+    /// isn't one this plugin knows it wrote: another program's, or this plugin's own from before
+    /// its list of them was lost (the 1.3.2.0 catalog update). Nothing is deleted: renaming it
+    /// back brings it back.
+    /// </summary>
+    private void SetAsideOtherEdl(BaseItem item)
+    {
+        if (item is not Video || string.IsNullOrEmpty(item.Path) || !item.IsFileProtocol
+            || SiblingEdlPath(item.Path) is not { } edlPath)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!File.Exists(edlPath) || _store.IsOwnedEdl(edlPath))
+            {
+                return;
+            }
+
+            var target = edlPath + ".old";
+            for (var n = 2; File.Exists(target); n++)
+            {
+                target = edlPath + ".old" + n;
+            }
+
+            File.Move(edlPath, target);
+            _logger.LogInformation("Rescan asked for: set the existing .edl beside {Path} aside as {Old} so Comskip runs", item.Path, Path.GetFileName(target));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not set the .edl beside {Path} aside; using it as before", item.Path);
+        }
     }
 
     /// <summary>
@@ -917,6 +962,17 @@ public sealed class DetectionManager : BackgroundService
             harvestedEdlPath = null;
         }
 
+        // The repeat-ad check's fingerprint is made alongside Comskip: both read the same file,
+        // so it comes off the disk once (ffmpeg takes ~15 s for a 90-minute recording).
+        using var fpCancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var stopFingerprint = new OnDispose(fpCancel.Cancel); // whatever way this scan ends, ffmpeg stops with it
+        Task<uint[]?>? fingerprint = null;
+        if (cfg.EnableRepeatAdCheck && (harvestedEdlPath is not null || ComskipInstaller.IsInstalled(cfg)))
+        {
+            var path = item.Path;
+            fingerprint = Task.Run(() => _repeats.FingerprintAsync(path, fpCancel.Token), fpCancel.Token);
+        }
+
         ComskipRunResult result;
         if (harvestedEdlPath is not null)
         {
@@ -951,7 +1007,8 @@ public sealed class DetectionManager : BackgroundService
                     job.Pid = pid;
                     job.ComskipActive.Start();
                 },
-                () => job.ComskipActive.Elapsed).ConfigureAwait(false);
+                () => job.ComskipActive.Elapsed,
+                wantPieces: fingerprint is not null).ConfigureAwait(false);
             job.Resume(); // only if it was paused when Comskip ended (it can't, but never leave it marked so)
             job.Pid = null;
             job.ComskipActive.Stop();
@@ -962,13 +1019,44 @@ public sealed class DetectionManager : BackgroundService
         if (result.Outcome == ComskipOutcome.Failed || result.EdlPath is null)
         {
             // Record as Failed (NOT NoCommercials) so it stays eligible for a retry.
+            fpCancel.Cancel();
             _store.Save(itemId, new DetectionRecord(DetectionStatus.Failed, Array.Empty<CommercialBreak>(), DateTime.UtcNow, DetectionRecord.SourceComskip));
             return Done(job, "failed", 0, result.Error ?? "Comskip failed", false);
         }
 
-        var breaks = EdlParser.Parse(result.EdlPath, cfg.PaddingSeconds);
+        IReadOnlyList<CommercialBreak> breaks = EdlParser.Parse(result.EdlPath, cfg.PaddingSeconds);
+        double repeatAdded = 0, repeatRemoved = 0;
+        var learnedFrom = 0;
+        if (fingerprint is not null)
+        {
+            job.Stage = "repeats";
+            try
+            {
+                if (await fingerprint.ConfigureAwait(false) is { } fp)
+                {
+                    var check = await _repeats.CheckAsync(
+                        item, fp, breaks, result.Pieces, id => IsInFlight(id) || _cuts.IsBusy(id), ct).ConfigureAwait(false);
+                    (breaks, repeatAdded, repeatRemoved, learnedFrom) = (check.Breaks, check.AddedSeconds, check.RemovedSeconds, check.EditedEpisodes);
+                    if (repeatAdded > 0 || repeatRemoved > 0)
+                    {
+                        // The work copy is what gets placed beside the recording below.
+                        EdlWriter.Write(result.EdlPath, breaks);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Repeat-ad check failed for {Path}; keeping Comskip's breaks", item.Path);
+            }
+
+            job.Stage = "saving";
+        }
+
         var status = breaks.Count > 0 ? DetectionStatus.Detected : DetectionStatus.NoCommercials;
-        _store.Save(itemId, new DetectionRecord(status, breaks, DateTime.UtcNow, DetectionRecord.SourceComskip));
+        _store.Save(itemId, new DetectionRecord(status, breaks, DateTime.UtcNow, DetectionRecord.SourceComskip, repeatAdded, repeatRemoved));
 
         _logger.LogInformation("{Status}: {Count} break(s) for {Path}", status, breaks.Count, item.Path);
 
@@ -988,7 +1076,13 @@ public sealed class DetectionManager : BackgroundService
             job,
             breaks.Count > 0 ? "breaks" : "none",
             breaks.Count,
-            ranComskip ? null : "From the scan that ran while it recorded",
+            string.Join("; ", new[]
+            {
+                ranComskip ? null : "From the scan that ran while it recorded",
+                repeatAdded > 0 ? $"{Clock(repeatAdded)} of ads added" + (learnedFrom > 0 ? "" : " (heard in other shows)") : null,
+                repeatRemoved > 0 ? $"{Clock(repeatRemoved)} given back to the show" : null,
+                learnedFrom > 0 && (repeatAdded > 0 || repeatRemoved > 0) ? $"learned from {learnedFrom} hand-edited episode{(learnedFrom == 1 ? "" : "s")}" : null
+            }.Where(x => x is not null)) is { Length: > 0 } detail ? detail : null,
             ranComskip && job.ComskipStartedUtc is not null);
     }
 
@@ -1166,5 +1260,12 @@ public sealed class DetectionManager : BackgroundService
                 _logger.LogDebug(ex, "Could not delete work file {Base}{Ext}", baseName, ext);
             }
         }
+    }
+
+    private static string Clock(double seconds) => $"{(int)seconds / 60}:{(int)seconds % 60:00}";
+
+    private sealed class OnDispose(Action action) : IDisposable
+    {
+        public void Dispose() => action();
     }
 }

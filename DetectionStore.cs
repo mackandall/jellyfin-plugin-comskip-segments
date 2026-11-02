@@ -27,11 +27,15 @@ public enum DetectionStatus
 /// Channels DVR, Emby — left beside the video), <see cref="SourceEdited"/> or
 /// <see cref="SourceCut"/>; "cleared" after Remove commercials. Null on records written before this
 /// field existed, which were all Comskip runs.</param>
+/// <param name="RepeatSeconds">Seconds of breaks the repeat-ad check added to Comskip's.</param>
+/// <param name="RemovedSeconds">Seconds of Comskip's breaks it gave back to the show (learned from hand-edited episodes).</param>
 public sealed record DetectionRecord(
     DetectionStatus Status,
     IReadOnlyList<CommercialBreak> Breaks,
     DateTime UpdatedUtc,
-    string? Source = null)
+    string? Source = null,
+    double RepeatSeconds = 0,
+    double RemovedSeconds = 0)
 {
     public const string SourceComskip = "comskip";
     public const string SourceEdl = "edl";

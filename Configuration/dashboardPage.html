@@ -632,7 +632,7 @@
             };
             var STAGES = {
                 starting: "Starting", audio: "Checking the audio format", "program-start": "Looking for the program start",
-                comskip: "Comskip is scanning", saving: "Saving the breaks"
+                comskip: "Comskip is scanning", repeats: "Checking for repeated ads", saving: "Saving the breaks"
             };
 
             function reasonPill(r) {
@@ -681,7 +681,8 @@
                 var q = queue.data;
                 var busy = {};
                 q.Running.forEach(function (j) { busy[j.Worker] = j; });
-                $("#CsdQRunSum").textContent = q.Running.length + " of " + q.Workers + " worker" + (q.Workers === 1 ? "" : "s") + " busy";
+                $("#CsdQRunSum").textContent = q.Running.length + " of " + q.Workers + " worker" + (q.Workers === 1 ? "" : "s") + " busy"
+                    + ((q.Live || []).length ? " · " + q.Live.length + " live scan" + (q.Live.length === 1 ? "" : "s") : "");
                 var cards = [];
                 for (var w = 1; w <= Math.max(q.Workers, q.Running.length); w++) {
                     var j = busy[w];
@@ -707,6 +708,19 @@
                         + '<button type="button" class="csd-btn sm danger" data-qcancel="' + j.Id + '" data-name="' + esc(j.Name) + '">Cancel scan</button></div>'
                         + "</div>");
                 }
+                (q.Live || []).forEach(function (l) {
+                    var lp = l.Progress != null ? Math.round(l.Progress * 100) : null;
+                    cards.push('<div class="csd-worker live">'
+                        + '<span class="csd-wlab">Live scan · ' + (l.Finished ? "Finished, waiting for the recording to settle" : "Following the recording") + "</span>"
+                        + '<div style="font-weight:600">' + esc(l.Name) + "</div>"
+                        + (l.Folder ? '<div class="csd-wpath">' + esc(l.Folder) + "</div>" : "")
+                        + '<div class="csd-wmeta">'
+                        + (lp != null && !l.Finished ? "<span><b>" + lp + "%</b> of what's recorded so far</span>" : "")
+                        + "<span>Running <b>" + clock(l.Seconds) + "</b></span>"
+                        + '<span class="csd-pill">Live</span></div>'
+                        + '<div class="csd-sub" style="margin-top:2px">Outside the queue: doesn\'t use a worker. Its breaks are kept when the recording ends.</div>'
+                        + "</div>");
+                });
                 $("#CsdQRunning").innerHTML = cards.join("");
                 $("#CsdQBar").classList.toggle("paused", q.Paused);
                 $("#CsdQBarText").textContent = q.Paused

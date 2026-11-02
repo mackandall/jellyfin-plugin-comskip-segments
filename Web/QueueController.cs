@@ -24,11 +24,19 @@ public sealed class QueueController : ControllerBase
     private readonly ILibraryManager _libraryManager;
     private readonly DetectionManager _manager;
 
-    public QueueController(ILibraryManager libraryManager, DetectionManager manager)
+    private readonly LiveScanCoordinator _live;
+
+    public QueueController(ILibraryManager libraryManager, DetectionManager manager, LiveScanCoordinator live)
     {
         _libraryManager = libraryManager;
         _manager = manager;
+        _live = live;
     }
+
+    /// <summary>A live scan: Comskip following a recording while it's still being written (outside the queue).</summary>
+    /// <param name="Progress">How far it has read into the recording so far (the file keeps growing).</param>
+    /// <param name="Finished">Done reading; its breaks are collected when the recording settles.</param>
+    public sealed record LiveDto(string Name, string? Folder, DateTime StartedUtc, double Seconds, double? Progress, bool Finished);
 
     /// <param name="Stage">starting, audio, program-start, comskip, saving.</param>
     /// <param name="Progress">How far Comskip has read the file, 0–1 (null: not known yet).</param>
@@ -55,7 +63,8 @@ public sealed class QueueController : ControllerBase
         double? AverageSeconds,
         IReadOnlyList<FinishedEntry> History,
         int Done24,
-        int Failed24);
+        int Failed24,
+        IReadOnlyList<LiveDto> Live);
 
     public sealed record ActionResponse(bool Ok, string Message);
 
@@ -100,7 +109,10 @@ public sealed class QueueController : ControllerBase
             average,
             snap.History,
             day.Count(h => h.Result is "breaks" or "none"),
-            day.Count(h => h.Result == "failed")));
+            day.Count(h => h.Result == "failed"),
+            _live.Running().Select(l => new LiveDto(
+                System.IO.Path.GetFileNameWithoutExtension(l.Path), FolderOf(l.Path), l.StartedUtc,
+                (now - l.StartedUtc).TotalSeconds, l.Progress, l.Finished)).ToList()));
     }
 
     /// <summary>Cancels a running scan. The recording keeps the breaks it had.</summary>

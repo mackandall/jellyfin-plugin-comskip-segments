@@ -89,6 +89,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool EnableBackstopScan { get; set; } = true;
 
     /// <summary>
+    /// A forced rescan of one recording (dashboard, item menu, settings page) runs Comskip even
+    /// when another program's .edl is beside it: that .edl is renamed to "&lt;name&gt;.edl.old", not
+    /// deleted. Off: such a rescan uses that .edl, as automatic scans and folder rescans always do.
+    /// </summary>
+    public bool ManualScanIgnoresOtherEdl { get; set; } = true;
+
+    /// <summary>
     /// Whether the media-segment provider auto-queues an unprocessed item when
     /// Jellyfin's own Media Segment Scan asks it for segments. Off = detection only
     /// ever starts from the recording watcher, the backstop scan, or a manual run.
@@ -187,6 +194,36 @@ public class PluginConfiguration : BasePluginConfiguration
     /// into a folder this plugin doesn't otherwise touch.
     /// </summary>
     public bool PlaceEdlBesideRecording { get; set; }
+
+    /// <summary>
+    /// Repeat-ad check: after Comskip, compare the recording's sound with the other recent
+    /// recordings' and add the stretches also heard in another show (ads air over and over, the
+    /// show doesn't). Catches ads Comskip misses where breaks have no black frames or logo change
+    /// (FAST channels like Crunchyroll's) and short break edges. Off by default.
+    /// </summary>
+    public bool EnableRepeatAdCheck { get; set; }
+
+    /// <summary>Days a recording's fingerprint is kept for comparing with newer ones (about 115 KB an hour of recording).</summary>
+    public int RepeatAdKeepDays { get; set; } = 30;
+
+    /// <summary>Also add the ads a new recording shares with an older one to the older one (only when its breaks are Comskip's).</summary>
+    public bool RepeatAdUpdateOlder { get; set; } = true;
+
+    /// <summary>
+    /// Learn from hand-edited episodes (needs the repeat-ad check): once a show has two or more
+    /// episodes whose breaks were set by hand, its new recordings get the ads you marked there,
+    /// lose the stretches you kept as show (openings, endings Comskip calls ads), have their show
+    /// time checked against yours, and get the padding you always mark. Off by default.
+    /// </summary>
+    public bool RepeatAdLearnFromEdits { get; set; }
+
+    /// <summary>
+    /// With <see cref="RepeatAdLearnFromEdits"/>: when three or more of a show's hand-edited
+    /// episodes of about the same length have the same number of breaks, new scans of it get
+    /// that many breaks, each where and as long as in those episodes, its edges on Comskip's cut
+    /// points (on by default).
+    /// </summary>
+    public bool RepeatAdUseBreakPattern { get; set; } = true;
 
     /// <summary>
     /// Master switch for the audio-format trim feature. Some broadcast recordings open

@@ -46,6 +46,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // DetectionManager is both a singleton (so the provider/watcher/task can enqueue
         // into it) AND the hosted service that runs the worker loop. Register the singleton
         // first, then hand the same instance to the hosted-service collection.
+        serviceCollection.AddSingleton<RepeatAds.FingerprintStore>();
+        serviceCollection.AddSingleton<RepeatAds.RepeatAdService>();
         serviceCollection.AddSingleton<DetectionManager>();
         serviceCollection.AddHostedService(sp => sp.GetRequiredService<DetectionManager>());
 

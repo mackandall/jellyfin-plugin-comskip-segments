@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
@@ -28,7 +29,8 @@ namespace Jellyfin.Plugin.ComskipSegments.Detection;
 /// recording, apparently hitting comskip.ini's <c>live_tv_retries</c> limit on a pause in
 /// the writer's pacing (the ini's own comment suggests raising it, e.g. "Change to 16 when
 /// using live_tv in BTV"). A self-exited process's .edl only covers whatever it saw before
-/// it gave up — silently trusting it as "the" result for the whole recording would be
+/// it gave up (but see <see cref="FinishedWithFile"/>: exiting after the recording stopped
+/// growing is the normal end, with the whole file read) — silently trusting it as "the" result for the whole recording would be
 /// **worse** than not having this feature at all. So every path that would hand a job's
 /// .edl to a caller first checks whether the process is still alive: still running means
 /// we killed it ourselves because the recording actually settled (the intended path,
@@ -198,6 +200,48 @@ public sealed class LiveScanCoordinator : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether an exited live scan had the whole file: the recording last grew before Comskip
+    /// exited (it reads to the end, then waits for more before giving up).
+    /// </summary>
+    private static bool FinishedWithFile(LiveJob job, string mediaPath)
+    {
+        try
+        {
+            var exited = job.Process.ExitTime.ToUniversalTime();
+            var file = new FileInfo(mediaPath);
+            return file.Exists && file.LastWriteTimeUtc <= exited.AddSeconds(1);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>A live scan, for the Queue tab.</summary>
+    /// <param name="Progress">How far it has read into the recording so far, 0-1 (null: not known).</param>
+    /// <param name="Finished">Done with the whole file; its result is collected when the queue gets to the recording.</param>
+    public sealed record LiveScanInfo(string Path, DateTime StartedUtc, double? Progress, bool Finished);
+
+    public IReadOnlyList<LiveScanInfo> Running()
+    {
+        var result = new List<LiveScanInfo>();
+        foreach (var (path, job) in _jobs)
+        {
+            try
+            {
+                var exited = job.Process.HasExited;
+                result.Add(new LiveScanInfo(path, job.StartedUtc, exited ? null : ReadProgress(job.Process.Id, path), exited));
+            }
+            catch (InvalidOperationException)
+            {
+                // harvested or disposed meanwhile
+            }
+        }
+
+        return result.OrderBy(j => j.StartedUtc).ToList();
+    }
+
     private static bool HasAnyBreak(string edlPath)
     {
         try
@@ -222,6 +266,12 @@ public sealed class LiveScanCoordinator : IDisposable
         // its own at some earlier, unknown point; do not use its .edl.
         var selfExited = job.Process.HasExited;
 
+        // Exiting on its own is also how a live scan ends normally: when the recording stops
+        // growing, Comskip waits live_tv_retries x 4 s at the end of the file and exits, having
+        // read all of it (seen 2026-11-01: Tracker's scan exited 90 s after the recording ended,
+        // and was thrown away). Only an exit while the file was still growing is a give-up.
+        var finishedFile = selfExited && FinishedWithFile(job, mediaPath);
+
         // Alive isn't enough: a live scan can fall behind the recording (seen live: a busy
         // server, two back-to-back recordings plus Intro Skipper, left one still reading the
         // early part of the file when the recording ended; its result said "no commercials",
@@ -231,10 +281,15 @@ public sealed class LiveScanCoordinator : IDisposable
         TryKill(job.Process);
         job.Process.Dispose();
 
-        if (selfExited)
+        if (selfExited && !finishedFile)
         {
             LogSelfExit(mediaPath, job);
             return null;
+        }
+
+        if (finishedFile)
+        {
+            _logger.LogInformation("Live Comskip scan for {Path} read the whole recording and finished on its own", mediaPath);
         }
 
         if (progress is < MinHarvestProgress)
@@ -287,6 +342,11 @@ public sealed class LiveScanCoordinator : IDisposable
                 // Lost a race with a concurrent TryHarvest()/Dispose() for this same job
                 // (it already removed and disposed the Process); nothing left to prune.
                 continue;
+            }
+
+            if (hasExited && FinishedWithFile(job, path) && job.StartedUtc >= cutoff)
+            {
+                continue; // finished with the whole file: kept for TryHarvest (dropped if the file grows again)
             }
 
             if (hasExited)

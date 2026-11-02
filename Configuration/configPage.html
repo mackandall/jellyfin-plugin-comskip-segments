@@ -83,6 +83,12 @@
                     <h2>Automatic detection</h2>
 
                     <label class="checkboxContainer">
+                        <input id="ManualScanIgnoresOtherEdl" name="ManualScanIgnoresOtherEdl" type="checkbox" is="emby-checkbox" />
+                        <span>A rescan I ask for runs Comskip even if another program's .edl is there</span>
+                    </label>
+                    <div class="fieldDescription" style="margin-bottom:1em;">When you rescan one recording (with Force), an .edl beside it that this plugin didn't write is renamed to "&lt;name&gt;.edl.old", not deleted, and Comskip runs. Automatic scans and folder rescans keep using such an .edl.</div>
+
+                    <label class="checkboxContainer">
                         <input id="EnableBackstopScan" name="EnableBackstopScan" type="checkbox" is="emby-checkbox" />
                         <span>Run a periodic backstop scan</span>
                     </label>
@@ -329,6 +335,39 @@
                 </div>
 
                 <div class="verticalSection">
+                    <h2>Repeated ads</h2>
+                    <label class="checkboxContainer">
+                        <input id="EnableRepeatAdCheck" name="EnableRepeatAdCheck" type="checkbox" is="emby-checkbox" />
+                        <span>Add ads heard in other shows to the breaks</span>
+                    </label>
+                    <div class="fieldDescription">After each Comskip scan, the recording's sound is compared with your other recent recordings. A stretch that also aired in a different show is an ad, so it's added to the breaks even when Comskip called it show (often the case on FAST channels such as Crunchyroll). Only other shows count: a show's own theme song or credits are never cut. Takes about 15 extra seconds per recording.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RepeatAdKeepDays">Remember recordings for (days)</label>
+                        <input id="RepeatAdKeepDays" name="RepeatAdKeepDays" type="number" min="1" max="365" is="emby-input" />
+                        <div class="fieldDescription">How far back the comparison reaches. Each recording keeps a small sound fingerprint (about 115 KB an hour).</div>
+                    </div>
+
+                    <label class="checkboxContainer">
+                        <input id="RepeatAdUpdateOlder" name="RepeatAdUpdateOlder" type="checkbox" is="emby-checkbox" />
+                        <span>Also update older recordings that share an ad with a new one</span>
+                    </label>
+                    <div class="fieldDescription">Only recordings whose breaks are still Comskip's: never ones you edited, cut, or that came from another program's .edl.</div>
+
+                    <label class="checkboxContainer">
+                        <input id="RepeatAdLearnFromEdits" name="RepeatAdLearnFromEdits" type="checkbox" is="emby-checkbox" />
+                        <span>Learn from episodes I've edited by hand</span>
+                    </label>
+                    <div class="fieldDescription">Once a show has two or more episodes whose breaks you set by hand on the segments dashboard, its new scans learn from them: ads you marked are found again, stretches you kept as show (openings, endings Comskip calls ads) are given back, the show time is checked against yours, and the padding at both ends you always mark is marked. Each hand-edited episode is fingerprinted once (about 15 seconds) and kept for as long as your edit. Tested on Witchblade (Crunchyroll channel): from 70–84% right to 91–98%.</div>
+                    <label class="checkboxContainer">
+                        <input id="RepeatAdUseBreakPattern" name="RepeatAdUseBreakPattern" type="checkbox" is="emby-checkbox" />
+                        <span>Follow the show's break pattern</span>
+                    </label>
+                    <div class="fieldDescription">With learning on: once three or more of a show's edited episodes of about the same length have the same number of breaks, its new scans get that many breaks, each about where and as long as yours, with edges on the cut points Comskip found (black frames, silence). Turn off for shows whose breaks move around.</div>
+                    <div class="fieldDescription" id="RepeatAdStatus"></div>
+                </div>
+
+                <div class="verticalSection">
                     <h2>Badges</h2>
                     <div class="fieldDescription" style="margin-bottom:1em;">Status badges the browser overlay and Wholphin draw on recordings: amber while scanning, green when commercials are marked, grey when none were found, red when a scan failed.</div>
 
@@ -376,6 +415,16 @@
             var pluginUniqueId = "e8f9a7c2-4b3d-4e1a-9c6f-2a1b0c3d4e5f";
 
             // Remembered program-start cards, each with Forget.
+            function loadRepeatAdStatus(page) {
+                var el = page.querySelector("#RepeatAdStatus");
+                ApiClient.getJSON(ApiClient.getUrl("ComskipSegments/RepeatAds/Status")).then(function (r) {
+                    el.textContent = r.Count === 0
+                        ? "No recordings remembered yet."
+                        : r.Count + " recording" + (r.Count === 1 ? "" : "s") + " remembered (" + (r.Bytes / 1048576).toFixed(1)
+                            + " MB), the oldest from " + new Date(r.OldestUtc).toLocaleDateString() + ".";
+                }, function () { el.textContent = ""; });
+            }
+
             function loadStartCards(page) {
                 var box = page.querySelector("#ProgramStartCards");
                 ApiClient.getJSON(ApiClient.getUrl("ComskipSegments/ProgramStart/Cards")).then(function (cards) {
@@ -441,6 +490,7 @@
                 page.querySelector("#RecordingsPath").value = config.RecordingsPath || "";
                 page.querySelector("#ProcessRecordingsAutomatically").checked = !!config.ProcessRecordingsAutomatically;
                 page.querySelector("#EnableBackstopScan").checked = config.EnableBackstopScan !== false;
+                page.querySelector("#ManualScanIgnoresOtherEdl").checked = config.ManualScanIgnoresOtherEdl !== false;
                 page.querySelector("#AutoScanIntervalHours").value = config.AutoScanIntervalHours != null ? config.AutoScanIntervalHours : 6;
                 page.querySelector("#EnableMediaSegmentScanEnqueue").checked = config.EnableMediaSegmentScanEnqueue !== false;
                 page.querySelector("#EnableLiveScanStart").checked = !!config.EnableLiveScanStart;
@@ -454,6 +504,12 @@
                 page.querySelector("#PaddingSeconds").value = config.PaddingSeconds || 0;
                 page.querySelector("#CleanupWorkFiles").checked = !!config.CleanupWorkFiles;
                 page.querySelector("#PlaceEdlBesideRecording").checked = !!config.PlaceEdlBesideRecording;
+                page.querySelector("#EnableRepeatAdCheck").checked = !!config.EnableRepeatAdCheck;
+                page.querySelector("#RepeatAdKeepDays").value = config.RepeatAdKeepDays || 30;
+                page.querySelector("#RepeatAdUpdateOlder").checked = config.RepeatAdUpdateOlder !== false;
+                page.querySelector("#RepeatAdLearnFromEdits").checked = !!config.RepeatAdLearnFromEdits;
+                page.querySelector("#RepeatAdUseBreakPattern").checked = config.RepeatAdUseBreakPattern !== false;
+                loadRepeatAdStatus(page);
                 page.querySelector("#BadgeCardStyle").value = config.BadgeCardStyle || "icon";
                 page.querySelector("#BadgeGuideStyle").value = config.BadgeGuideStyle || "letters";
                 page.querySelector("#BadgeScanningMotion").value = config.BadgeScanningMotion || "pulse";
@@ -749,6 +805,7 @@
                         config.RecordingsPath = page.querySelector("#RecordingsPath").value;
                         config.ProcessRecordingsAutomatically = page.querySelector("#ProcessRecordingsAutomatically").checked;
                         config.EnableBackstopScan = page.querySelector("#EnableBackstopScan").checked;
+                        config.ManualScanIgnoresOtherEdl = page.querySelector("#ManualScanIgnoresOtherEdl").checked;
                         var autoScan = parseFloat(page.querySelector("#AutoScanIntervalHours").value);
                         config.AutoScanIntervalHours = isNaN(autoScan) || autoScan < 0 ? 0 : autoScan;
                         config.EnableMediaSegmentScanEnqueue = page.querySelector("#EnableMediaSegmentScanEnqueue").checked;
@@ -763,6 +820,11 @@
                         config.PaddingSeconds = parseFloat(page.querySelector("#PaddingSeconds").value) || 0;
                         config.CleanupWorkFiles = page.querySelector("#CleanupWorkFiles").checked;
                         config.PlaceEdlBesideRecording = page.querySelector("#PlaceEdlBesideRecording").checked;
+                        config.EnableRepeatAdCheck = page.querySelector("#EnableRepeatAdCheck").checked;
+                        config.RepeatAdKeepDays = parseInt(page.querySelector("#RepeatAdKeepDays").value, 10) || 30;
+                        config.RepeatAdUpdateOlder = page.querySelector("#RepeatAdUpdateOlder").checked;
+                        config.RepeatAdLearnFromEdits = page.querySelector("#RepeatAdLearnFromEdits").checked;
+                        config.RepeatAdUseBreakPattern = page.querySelector("#RepeatAdUseBreakPattern").checked;
                         config.BadgeCardStyle = page.querySelector("#BadgeCardStyle").value;
                         config.BadgeGuideStyle = page.querySelector("#BadgeGuideStyle").value;
                         config.BadgeScanningMotion = page.querySelector("#BadgeScanningMotion").value;
