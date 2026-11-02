@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/icon.png",
     "versions": [
       {
+        "version": "1.3.4.0",
+        "changelog": "Repeated ads (optional): ads heard in other shows are added to the breaks; learn from episodes you edited by hand (also after cutting them), follow the show's break pattern with edges pinned by eyecatches and countdowns. Live scans that end with the recording are used; Queue tab shows live scans. A rescan of one recording runs Comskip even if another program's .edl is beside it (renamed .edl.old).",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.4.0/jellyfin-plugin-comskip-segments_1.3.4.0.zip",
+        "checksum": "55d089a387b9ed2b97aa177e25bccd9e",
+        "timestamp": "2026-11-02T07:10:30.0000000Z"
+      },
+      {
         "version": "1.3.3.0",
         "changelog": "Queue tab on the Commercial segments dashboard: the scans running now (progress, time left, pause, cancel), the ones waiting in order (why each is queued, Scan next, Remove, Clear, pause the queue) and the last 200 finished; the queue is kept across restarts. Each scan of a finished recording is about a minute faster (live_tv=0 for finished files), with the same breaks. A re-scan keeps the old breaks until the new ones are in. The plugin's state moves to <data>/comskip-segments: updating a manually installed copy from the catalog no longer deletes it.",
         "targetAbi": "12.0.0.0",
