@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -253,5 +254,67 @@ public sealed class AudioChannelScanner
         var startTime = fields.Length > 0 && double.TryParse(fields[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0;
         var duration = fields.Length > 1 && double.TryParse(fields[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 0;
         return (startTime, duration);
+    }
+
+    /// <summary>
+    /// The <c>-map</c> arguments for a stream copy: the streams the recording declares, by their
+    /// MPEG-TS PID (<c>-map 0:#0x100?</c>), so a stray stream that turns up only partway through is
+    /// left out. Some recordings carry an undeclared ID3 PID that ffmpeg takes for an empty MP3 track
+    /// ("mp3, 0 channels"): with <c>-map 0</c>, a part that starts where it appears fails with
+    /// "sample rate not set". Files without PIDs (not MPEG-TS), or a failed probe, copy everything.
+    /// </summary>
+    internal static async Task<string[]> CopyMaps(string ffprobePath, string mediaPath, CancellationToken cancellationToken)
+    {
+        var all = new[] { "-map", "0" };
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = ffprobePath,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            foreach (var a in new[] { "-v", "error", "-show_entries", "stream=index,id", "-of", "csv=p=0", mediaPath })
+            {
+                psi.ArgumentList.Add(a);
+            }
+
+            using var process = new Process { StartInfo = psi };
+            process.Start();
+            var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+
+            // index,id lines; ffprobe lists them once per program and once on their own.
+            var pids = new SortedDictionary<int, string>();
+            foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var f = line.Split(',');
+                if (!int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
+                {
+                    continue;
+                }
+
+                if (f.Length < 2 || !f[1].StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                {
+                    return all;   // a stream without a PID: not MPEG-TS
+                }
+
+                pids[index] = f[1];
+            }
+
+            if (process.ExitCode != 0 || pids.Count == 0)
+            {
+                return all;
+            }
+
+            // The trailing ? lets a part that lacks one of them still copy.
+            return pids.Values.SelectMany(pid => new[] { "-map", $"0:#{pid}?" }).ToArray();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return all;   // probing is only a refinement: copy everything, as before
+        }
     }
 }

@@ -161,6 +161,7 @@ public sealed class RecordingTrimmer
         var partPaths = parts.Select((_, i) => Path.Combine(folder, $"{stem}-part{i + 1}{ext}")).ToList();
         var listPath = Path.Combine(folder, $"{stem}-parts.txt");
         var kept = new List<KeptPart>();
+        var maps = await AudioChannelScanner.CopyMaps(_encoder.ProbePath, recordingPath, cancellationToken).ConfigureAwait(false);
         try
         {
             if (job is not null)
@@ -193,7 +194,8 @@ public sealed class RecordingTrimmer
                 }
 
                 // -f mpegts: see RunFfmpeg (a .mpg name would otherwise give MPEG-PS).
-                args.AddRange(new[] { "-map", "0", "-c", "copy", "-avoid_negative_ts", "make_zero", "-f", "mpegts", partPaths[i] });
+                args.AddRange(maps);
+                args.AddRange(new[] { "-c", "copy", "-avoid_negative_ts", "make_zero", "-f", "mpegts", partPaths[i] });
                 var copied = await RunProcess(Psi(ffmpegPath, args), recordingPath, partPaths[i], cancellationToken).ConfigureAwait(false);
                 if (!copied.Success)
                 {
@@ -332,8 +334,11 @@ public sealed class RecordingTrimmer
         psi.ArgumentList.Add("-t");
         psi.ArgumentList.Add(keepDuration.ToString("F3", CultureInfo.InvariantCulture));
 
-        psi.ArgumentList.Add("-map");
-        psi.ArgumentList.Add("0");
+        foreach (var a in await AudioChannelScanner.CopyMaps(_encoder.ProbePath, inputPath, cancellationToken).ConfigureAwait(false))
+        {
+            psi.ArgumentList.Add(a);
+        }
+
         psi.ArgumentList.Add("-c");
         psi.ArgumentList.Add("copy");
         psi.ArgumentList.Add("-avoid_negative_ts");
