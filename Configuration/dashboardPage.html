@@ -606,6 +606,7 @@
             function renderBatch(shown) {
                 var box = $("#CsdBatch"), html = "", b = state.batch;
                 var eligible = shown.filter(cuttable);
+                var searched = state.search.trim().length > 0;
                 if (b.Current) {
                     var cur = state.rows.filter(function (r) { return r.Id === b.Current; })[0];
                     var pct = state.jobs[b.Current];
@@ -613,7 +614,7 @@
                         + "</strong>" + (pct != null ? '<span class="csd-mono">' + pct + "%</span>" : "")
                         + '<span class="csd-sub csd-grow">' + (b.Waiting.length ? plural(b.Waiting.length, "more") + " waiting · " : "") + "you can leave this page; the cuts carry on.</span>"
                         + (b.Waiting.length ? '<button type="button" class="csd-btn" id="CsdBatchStop">Stop the rest</button>' : "") + "</div>";
-                } else if (state.confirm === "all" && eligible.length) {
+                } else if (state.confirm === "all" && eligible.length && searched) {
                     var breaks = eligible.reduce(function (n, r) { return n + r.Breaks.length; }, 0);
                     var removed = eligible.reduce(function (t, r) { return t + total(r.Breaks); }, 0);
                     html = '<div class="csd-confirm"><span class="csd-grow">Cut the commercials out of the ' + plural(eligible.length, "recording") + " shown: "
@@ -621,11 +622,15 @@
                         + esc(keepText().replace("The original is", "Each original is").replace("the cut", "each cut")) + "</span>"
                         + '<button type="button" class="csd-btn danger solid" id="CsdCutAllGo">Cut ' + plural(eligible.length, "recording") + "</button>"
                         + '<button type="button" class="csd-btn" data-cutcancel="1">Cancel</button></div>';
+                } else if (eligible.length > 1 && !searched) {
+                    // Only after a search: never every recording on the server by one slip.
+                    html = '<button type="button" class="csd-btn cut" disabled>Cut all shown…</button>'
+                        + ' <span class="csd-sub">Search for a show first; this then cuts the recordings the search finds.</span>';
                 } else if (eligible.length > 1) {
                     html = '<button type="button" class="csd-btn cut" id="CsdCutAll">Cut all shown (' + eligible.length + ")…</button>"
                         + ' <span class="csd-sub">every recording the search and filter show that has breaks and isn\'t cut yet</span>';
                 }
-                if (state.confirm === "all" && !eligible.length) {
+                if (state.confirm === "all" && (!eligible.length || !searched)) {
                     state.confirm = null;
                 }
                 box.innerHTML = html;
