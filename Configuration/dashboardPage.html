@@ -107,6 +107,9 @@
         #ComskipDashboardPage .csd-confirm .csd-grow { min-width: 260px; }
         #ComskipDashboardPage .csd-batchline { background: rgba(0,164,220,0.12); border-radius: 8px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
         #ComskipDashboardPage .csd-notcut { color: #ffab91; }
+        /* Cut buttons in the commercials' amber, so they stand apart from Open. */
+        #ComskipDashboardPage .csd-btn.cut { border-color: #f5a524; background: rgba(245,165,36,0.16); color: #ffd58a; font-weight: 600; }
+        #ComskipDashboardPage .csd-btn.cut:not(:disabled):hover { background: rgba(245,165,36,0.30); }
         #ComskipDashboardPage .csd-tabs { display: flex; gap: 8px; margin: 0.6em 0 1em; flex-wrap: wrap; }
         #ComskipDashboardPage .csd-tab { min-height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.25); background: transparent; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
         #ComskipDashboardPage .csd-tab[aria-selected="true"] { border-color: #00a4dc; background: rgba(0,164,220,0.18); }
@@ -503,8 +506,8 @@
                         + "<td>" + sourceBadge(r) + "</td>"
                         + '<td style="text-align:right;white-space:nowrap">'
                         + (c && c.OriginalBytes != null ? '<button type="button" class="csd-btn" data-delorig="' + r.Id + '">Delete original</button> ' : "")
-                        + cutCell(r)
-                        + '<button type="button" class="csd-btn" data-open="' + r.Id + '">Open</button></td>'
+                        + '<button type="button" class="csd-btn" data-open="' + r.Id + '">Open</button>'
+                        + cutCell(r) + "</td>"
                         + "</tr>"
                         + (state.confirm === r.Id ? '<tr><td colspan="7">' + cutConfirm(r) + "</td></tr>" : "");
                 }).join("");
@@ -577,17 +580,17 @@
                 return n + " " + word + (n === 1 ? "" : "s");
             }
 
-            // The row's last cell, before Open: where it is in line, or Cut….
+            // The row's last cell, after Open: where it is in line, or Cut….
             function cutCell(r) {
                 if (state.batch.Current === r.Id) {
                     var pct = state.jobs[r.Id];
-                    return '<span class="csd-sub">Cutting' + (pct != null ? " " + pct + "%" : "…") + "</span> ";
+                    return ' <span class="csd-sub">Cutting' + (pct != null ? " " + pct + "%" : "…") + "</span>";
                 }
                 var at = state.batch.Waiting.indexOf(r.Id);
                 if (at >= 0) {
-                    return '<span class="csd-sub">Waiting · ' + (at + 1) + "</span> ";
+                    return ' <span class="csd-sub">Waiting · ' + (at + 1) + "</span>";
                 }
-                return cuttable(r) ? '<button type="button" class="csd-btn" data-cut="' + r.Id + '">Cut…</button> ' : "";
+                return cuttable(r) ? ' <button type="button" class="csd-btn cut" data-cut="' + r.Id + '">Cut…</button>' : "";
             }
 
             function cutConfirm(r) {
@@ -619,7 +622,7 @@
                         + '<button type="button" class="csd-btn danger solid" id="CsdCutAllGo">Cut ' + plural(eligible.length, "recording") + "</button>"
                         + '<button type="button" class="csd-btn" data-cutcancel="1">Cancel</button></div>';
                 } else if (eligible.length > 1) {
-                    html = '<button type="button" class="csd-btn" id="CsdCutAll">Cut all shown (' + eligible.length + ")…</button>"
+                    html = '<button type="button" class="csd-btn cut" id="CsdCutAll">Cut all shown (' + eligible.length + ")…</button>"
                         + ' <span class="csd-sub">every recording the search and filter show that has breaks and isn\'t cut yet</span>';
                 }
                 if (state.confirm === "all" && !eligible.length) {
