@@ -83,6 +83,12 @@ public static class DetectionGate
             return false;
         }
 
+        if (LiveBuffers.IsUnkept(path))
+        {
+            reason = "it's a live TV buffer nobody has kept (JellyDVR Live deletes it in a few hours)";
+            return false;
+        }
+
         var candidates = Candidates(path, seriesName);
 
         var allow = Patterns(cfg.SeriesAllowList);

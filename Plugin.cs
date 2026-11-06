@@ -30,6 +30,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        LiveBuffers.DataPath = applicationPaths.DataPath;
     }
 
     public static Plugin? Instance { get; private set; }

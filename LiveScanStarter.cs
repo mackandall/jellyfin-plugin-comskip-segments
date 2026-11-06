@@ -103,6 +103,12 @@ public sealed class LiveScanStarter : BackgroundService
                 continue;
             }
 
+            if (LiveBuffers.IsUnkeptTimer(rec.TimerIds))
+            {
+                _logger.LogDebug("Live scan skipped for {Path}: an unkept live TV buffer", rec.Path);
+                continue;
+            }
+
             if (!DetectionGate.ShouldAutoDetectForInProgressRecording(
                     rec.Path, rec.Name, rec.ChannelName, rec.ChannelNumber, cfg, out var reason))
             {

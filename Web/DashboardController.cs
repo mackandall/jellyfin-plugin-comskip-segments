@@ -141,7 +141,8 @@ public sealed class DashboardController : ControllerBase
         var rows = new List<Row>();
         foreach (var id in ids)
         {
-            if (_libraryManager.GetItemById(id) is BaseItem item && item is Video)
+            // An unkept live TV buffer (JellyDVR Live) isn't a recording to edit: it goes in a few hours.
+            if (_libraryManager.GetItemById(id) is BaseItem item && item is Video && !LiveBuffers.IsUnkept(item.Path))
             {
                 rows.Add(RowOf(item, cuts.ContainsKey(id)));
             }
