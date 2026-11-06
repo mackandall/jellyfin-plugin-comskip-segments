@@ -114,6 +114,83 @@ public sealed class DetectionManager : BackgroundService
     private static PluginConfiguration Config =>
         Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
+    /// <summary>
+    /// The breaks with the show's learned end card (see <see cref="RepeatAds.EndCard"/>) marked
+    /// to the end of the file; the same list when it isn't learned or found, or changes nothing.
+    /// </summary>
+    private async Task<IReadOnlyList<CommercialBreak>> EndCardAsync(BaseItem item, IReadOnlyList<CommercialBreak> breaks, CancellationToken ct)
+    {
+        var ffmpeg = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.EncoderPath;
+        if (string.IsNullOrEmpty(ffmpeg) || _serviceProvider.GetService<RepeatAds.EndCardService>() is not { } endCards)
+        {
+            return breaks;
+        }
+
+        try
+        {
+            var check = await endCards.CheckAsync(ffmpeg, item, breaks, ct).ConfigureAwait(false);
+            if (check.Cut is not { } cut)
+            {
+                return breaks;
+            }
+
+            if (check.Breaks.SequenceEqual(breaks))
+            {
+                return breaks; // already marked that way
+            }
+
+            var last = breaks.Count > 0 ? breaks.MaxBy(b => b.EndTicks) : default;
+            _logger.LogInformation(
+                "End card of {Path}: the show ends at {Cut}, marked from there to the end{Pocket} (learned from {Edited} hand-edited episode(s); last break was {Before})",
+                item.Path,
+                Clock(cut),
+                check.PocketStart is { } ps ? $", credits kept from {Clock(ps)}" : "",
+                check.EditedEpisodes,
+                breaks.Count > 0 ? $"{Clock(last.StartTicks / 1e7)}–{Clock(last.EndTicks / 1e7)}" : "none");
+            return check.Breaks;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "End-card check failed for {Path}; keeping the breaks as they were", item.Path);
+            return breaks;
+        }
+    }
+
+    /// <summary>
+    /// The breaks with a silent opening (see <see cref="SilentOpening"/>) marked as one; the
+    /// same list when the recording doesn't open that way.
+    /// </summary>
+    private async Task<IReadOnlyList<CommercialBreak>> SilentOpeningAsync(string path, IReadOnlyList<CommercialBreak> breaks, CancellationToken ct)
+    {
+        var ffmpeg = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.EncoderPath;
+        if (string.IsNullOrEmpty(ffmpeg))
+        {
+            return breaks;
+        }
+
+        try
+        {
+            if (await SilentOpening.FindEndAsync(ffmpeg, path, ct).ConfigureAwait(false) is not { } end)
+            {
+                return breaks;
+            }
+
+            var before = breaks.Count > 0 && breaks[0].StartTicks < TimeSpan.TicksPerSecond ? breaks[0].EndTicks / 1e7 : 0;
+            if (before >= end)
+            {
+                return breaks;
+            }
+
+            _logger.LogInformation("Silent opening of {Path}: marked 0–{End:F1}s as a break (was {Before})", path, end, before > 0 ? $"0–{before:F1}s" : "none");
+            return SilentOpening.Apply(breaks, end);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Silent-opening check failed for {Path}; keeping the breaks as they were", path);
+            return breaks;
+        }
+    }
+
     /// <summary>What <see cref="Enqueue"/> did with an item.</summary>
     public enum EnqueueResult
     {
@@ -1053,6 +1130,23 @@ public sealed class DetectionManager : BackgroundService
             }
 
             job.Stage = "saving";
+        }
+
+        var beforeEdges = breaks;
+        if (cfg.MarkSilentOpening)
+        {
+            breaks = await SilentOpeningAsync(item.Path, breaks, ct).ConfigureAwait(false);
+        }
+
+        if (cfg.LearnEndCard)
+        {
+            breaks = await EndCardAsync(item, breaks, ct).ConfigureAwait(false);
+        }
+
+        if (!ReferenceEquals(breaks, beforeEdges))
+        {
+            // The work copy is what gets placed beside the recording below.
+            EdlWriter.Write(result.EdlPath, breaks);
         }
 
         var status = breaks.Count > 0 ? DetectionStatus.Detected : DetectionStatus.NoCommercials;

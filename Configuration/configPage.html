@@ -365,6 +365,18 @@
                     </label>
                     <div class="fieldDescription">With learning on: once three or more of a show's edited episodes of about the same length have the same number of breaks, its new scans get that many breaks, each about where and as long as yours, with edges on the cut points Comskip found (black frames, silence). Turn off for shows whose breaks move around.</div>
                     <div class="fieldDescription" id="RepeatAdStatus"></div>
+
+                    <label class="checkboxContainer">
+                        <input id="MarkSilentOpening" name="MarkSilentOpening" type="checkbox" is="emby-checkbox" />
+                        <span>Mark a silent opening as a break</span>
+                    </label>
+                    <div class="fieldDescription">When a recording opens with 20 seconds or more of silence that ends in a fade to black (Pluto channels do this, about a minute), the break runs from the start to that black. Recordings that open with sound are left as they are. Works with or without the repeat-ad check.</div>
+
+                    <label class="checkboxContainer">
+                        <input id="LearnEndCard" name="LearnEndCard" type="checkbox" is="emby-checkbox" />
+                        <span>Learn the end-of-show card from my edits</span>
+                    </label>
+                    <div class="fieldDescription">When two or more of a show's edited episodes end their last break right after the same picture (a studio logo, say) and run it to the end of the file, new scans of that show look for the picture near the end and mark everything after it as a break: filler, promos or the next episode's opening. Recordings where the picture isn't found are left as they are.</div>
                 </div>
 
                 <div class="verticalSection">
@@ -509,6 +521,8 @@
                 page.querySelector("#RepeatAdUpdateOlder").checked = config.RepeatAdUpdateOlder !== false;
                 page.querySelector("#RepeatAdLearnFromEdits").checked = !!config.RepeatAdLearnFromEdits;
                 page.querySelector("#RepeatAdUseBreakPattern").checked = config.RepeatAdUseBreakPattern !== false;
+                page.querySelector("#MarkSilentOpening").checked = config.MarkSilentOpening !== false;
+                page.querySelector("#LearnEndCard").checked = config.LearnEndCard !== false;
                 loadRepeatAdStatus(page);
                 page.querySelector("#BadgeCardStyle").value = config.BadgeCardStyle || "icon";
                 page.querySelector("#BadgeGuideStyle").value = config.BadgeGuideStyle || "letters";
@@ -825,6 +839,8 @@
                         config.RepeatAdUpdateOlder = page.querySelector("#RepeatAdUpdateOlder").checked;
                         config.RepeatAdLearnFromEdits = page.querySelector("#RepeatAdLearnFromEdits").checked;
                         config.RepeatAdUseBreakPattern = page.querySelector("#RepeatAdUseBreakPattern").checked;
+                        config.MarkSilentOpening = page.querySelector("#MarkSilentOpening").checked;
+                        config.LearnEndCard = page.querySelector("#LearnEndCard").checked;
                         config.BadgeCardStyle = page.querySelector("#BadgeCardStyle").value;
                         config.BadgeGuideStyle = page.querySelector("#BadgeGuideStyle").value;
                         config.BadgeScanningMotion = page.querySelector("#BadgeScanningMotion").value;

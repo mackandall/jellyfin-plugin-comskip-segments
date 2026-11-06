@@ -226,6 +226,18 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool RepeatAdUseBreakPattern { get; set; } = true;
 
     /// <summary>
+    /// When a recording opens with 20 s or more of silence that ends in a fade to black (Pluto's
+    /// lead-in), mark from the start to that black as a break (on by default). See <see cref="SilentOpening"/>.
+    /// </summary>
+    public bool MarkSilentOpening { get; set; } = true;
+
+    /// <summary>
+    /// Learn the picture a show's edited episodes end on before their final break runs to the
+    /// end of the file, and mark from there to the end in new scans (on by default). See <see cref="RepeatAds.EndCard"/>.
+    /// </summary>
+    public bool LearnEndCard { get; set; } = true;
+
+    /// <summary>
     /// Master switch for the audio-format trim feature. Some broadcast recordings open
     /// (and/or close) with a different audio channel layout than the movie itself — e.g. a
     /// network preview/bumper block in 2.0 stereo before a movie broadcast in 5.1, or a few
