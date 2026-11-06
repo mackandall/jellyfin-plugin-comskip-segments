@@ -28,6 +28,10 @@ public sealed record EditResult(bool Ok, string Message, bool Background = false
 /// <summary>How the last cut of a recording ended, for the dashboard (kept until the next one, or a restart).</summary>
 public sealed record CutResult(bool Ok, string Message, DateTime FinishedUtc);
 
+/// <param name="Waiting">Recordings waiting their turn to be cut, in order.</param>
+/// <param name="Current">The one being cut now (null: none).</param>
+public sealed record CutBatchState(IReadOnlyList<Guid> Waiting, Guid? Current);
+
 /// <summary>
 /// The segments dashboard's changes to a recording: its commercial breaks as edited by hand, and
 /// "Cut commercials out", which removes them from the file itself (a fast cut: the video is
@@ -73,6 +77,107 @@ public sealed class CommercialCutService
     private static PluginConfiguration Config => Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
     public CutResult? LastResult(Guid itemId) => _results.TryGetValue(itemId, out var r) ? r : null;
+
+    // "Cut" and "Cut all shown" on the Recordings list: cuts waiting their turn, done one at a time
+    // so that a batch doesn't read and write every file at once.
+    private readonly object _batchLock = new();
+    private readonly List<Guid> _waiting = new();
+    private Guid? _current;
+    private bool _batchRunning;
+
+    /// <summary>The cuts waiting their turn, and the one being done (null: none).</summary>
+    public CutBatchState Batch()
+    {
+        lock (_batchLock)
+        {
+            return new CutBatchState(_waiting.ToList(), _current);
+        }
+    }
+
+    /// <summary>Puts recordings in line to be cut, one after another; returns how many were added.</summary>
+    public int Queue(IEnumerable<Guid> itemIds)
+    {
+        var added = 0;
+        lock (_batchLock)
+        {
+            foreach (var id in itemIds)
+            {
+                if (id != _current && !_waiting.Contains(id))
+                {
+                    _waiting.Add(id);
+                    _results.TryRemove(id, out _);
+                    added++;
+                }
+            }
+
+            if (!_batchRunning && _waiting.Count > 0)
+            {
+                _batchRunning = true;
+                _ = Task.Run(RunBatchAsync);
+            }
+        }
+
+        return added;
+    }
+
+    /// <summary>Drops the cuts still waiting (the one under way carries on); returns how many.</summary>
+    public int StopBatch()
+    {
+        lock (_batchLock)
+        {
+            var n = _waiting.Count;
+            _waiting.Clear();
+            return n;
+        }
+    }
+
+    private async Task RunBatchAsync()
+    {
+        while (true)
+        {
+            Guid id;
+            lock (_batchLock)
+            {
+                if (_waiting.Count == 0)
+                {
+                    _current = null;
+                    _batchRunning = false;
+                    return;
+                }
+
+                id = _waiting[0];
+                _waiting.RemoveAt(0);
+                _current = id;
+            }
+
+            try
+            {
+                if (_libraryManager.GetItemById(id) is not BaseItem item)
+                {
+                    _results[id] = new CutResult(false, "The recording isn't in the library any more.", DateTime.UtcNow);
+                    continue;
+                }
+
+                var started = Cut(item);
+                if (!started.Ok)
+                {
+                    // Skipped (being watched, still recording, nothing to cut): said on its row.
+                    _results[id] = new CutResult(false, started.Message, DateTime.UtcNow);
+                    continue;
+                }
+
+                while (_cuts.IsBusy(id))
+                {
+                    await Task.Delay(2000).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Queued commercial cut of {ItemId} failed", id);
+                _results[id] = new CutResult(false, $"Unexpected error: {ex.Message}", DateTime.UtcNow);
+            }
+        }
+    }
 
     /// <summary>
     /// The breaks as edited on the dashboard. Stored as "edited": automatic detection leaves them

@@ -86,13 +86,20 @@ public sealed class DashboardController : ControllerBase
         string Status,
         string Source,
         bool Busy,
-        CutRow? Cut = null);
+        CutRow? Cut = null,
+        CutResult? LastCut = null);
 
     /// <param name="OriginalBytes">The kept original's size (null: none kept any more).</param>
     /// <param name="UndoUntil">When the kept original goes (null: kept for good, or none kept).</param>
     public sealed record CutRow(double SecondsBefore, long? OriginalBytes, DateTime? UndoUntil);
 
-    public sealed record ListResponse(IReadOnlyList<Row> Items);
+    /// <param name="Settings">How cuts are made (for the Cut… confirmations).</param>
+    /// <param name="Batch">The cuts waiting their turn and the one under way.</param>
+    public sealed record ListResponse(IReadOnlyList<Row> Items, CutSettings? Settings = null, CutBatchState? Batch = null);
+
+    public sealed record CutBatchRequest(IReadOnlyList<Guid>? Ids);
+
+    public sealed record CutBatchResponse(int Queued, CutBatchState Batch);
 
     /// <param name="Edl">ours (this plugin's), other (another program's, never overwritten), none.</param>
     /// <param name="Others">Segments other than commercials (another plugin's intro, a program-start preview): shown, not edited here.</param>
@@ -140,7 +147,7 @@ public sealed class DashboardController : ControllerBase
             }
         }
 
-        return Ok(new ListResponse(rows.OrderByDescending(r => r.Recorded).ToList()));
+        return Ok(new ListResponse(rows.OrderByDescending(r => r.Recorded).ToList(), Settings(), _cutter.Batch()));
     }
 
     [HttpGet("{itemId}")]
@@ -183,7 +190,7 @@ public sealed class DashboardController : ControllerBase
             cut,
             _cutter.LastResult(itemId),
             _cutter.Refusal(item),
-            new CutSettings(cfg.CutRounding, cfg.AudioTrimKeepOriginal, cfg.AudioTrimKeepOriginal ? 0 : Math.Max(0, cfg.TrimUndoDays), cfg.PlaceEdlBesideRecording),
+            Settings(),
             hasCut ? JoinsOf(cutRecord) : null));
     }
 
@@ -234,6 +241,23 @@ public sealed class DashboardController : ControllerBase
     [HttpPost("{itemId}/Cut")]
     public ActionResult<EditResult> CutOut([FromRoute] Guid itemId) =>
         _libraryManager.GetItemById(itemId) is BaseItem item ? Ok(_cutter.Cut(item)) : NotFound();
+
+    /// <summary>"Cut…" and "Cut all shown…": puts the recordings in line to be cut, one at a time.</summary>
+    [HttpPost("CutBatch")]
+    public ActionResult<CutBatchResponse> CutBatch([FromBody] CutBatchRequest request)
+    {
+        var ids = (request.Ids ?? Array.Empty<Guid>()).Where(id => _libraryManager.GetItemById(id) is Video).ToList();
+        var queued = _cutter.Queue(ids);
+        _logger.LogInformation("{Count} recording(s) put in line to be cut", queued);
+        return Ok(new CutBatchResponse(queued, _cutter.Batch()));
+    }
+
+    [HttpGet("CutBatch")]
+    public ActionResult<CutBatchState> CutBatchState() => Ok(_cutter.Batch());
+
+    /// <summary>Drops the cuts still waiting; the one under way carries on (its own Stop stops it).</summary>
+    [HttpPost("CutBatch/Stop")]
+    public ActionResult CutBatchStop() => Ok(new { Dropped = _cutter.StopBatch() });
 
     [HttpPost("{itemId}/UndoCut")]
     public async Task<ActionResult<EditResult>> UndoCut([FromRoute] Guid itemId) =>
@@ -461,7 +485,14 @@ public sealed class DashboardController : ControllerBase
             status,
             record?.Source ?? (hasRecord ? DetectionRecord.SourceComskip : "none"),
             _cuts.IsBusy(item.Id) || _manager.IsInFlight(item.Id),
-            status == "cut" ? CutRowOf(item) : null);
+            status == "cut" ? CutRowOf(item) : null,
+            _cutter.LastResult(item.Id));
+    }
+
+    private static CutSettings Settings()
+    {
+        var cfg = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+        return new CutSettings(cfg.CutRounding, cfg.AudioTrimKeepOriginal, cfg.AudioTrimKeepOriginal ? 0 : Math.Max(0, cfg.TrimUndoDays), cfg.PlaceEdlBesideRecording);
     }
 
     private CutRow? CutRowOf(BaseItem item)

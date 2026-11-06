@@ -103,6 +103,10 @@
         #ComskipDashboardPage .csd-progress { height: 10px; background: rgba(255,255,255,0.14); border-radius: 5px; overflow: hidden; margin: 10px 0; }
         #ComskipDashboardPage .csd-progress div { height: 100%; background: #00a4dc; width: 0; }
         #ComskipDashboardPage .csd-hidden { display: none !important; }
+        #ComskipDashboardPage .csd-confirm { background: rgba(229,57,53,0.10); border-radius: 8px; padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        #ComskipDashboardPage .csd-confirm .csd-grow { min-width: 260px; }
+        #ComskipDashboardPage .csd-batchline { background: rgba(0,164,220,0.12); border-radius: 8px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        #ComskipDashboardPage .csd-notcut { color: #ffab91; }
         #ComskipDashboardPage .csd-tabs { display: flex; gap: 8px; margin: 0.6em 0 1em; flex-wrap: wrap; }
         #ComskipDashboardPage .csd-tab { min-height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.25); background: transparent; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
         #ComskipDashboardPage .csd-tab[aria-selected="true"] { border-color: #00a4dc; background: rgba(0,164,220,0.18); }
@@ -160,6 +164,7 @@
                     <label class="inputLabel inputLabelUnfocused" for="CsdSearch">Search</label>
                     <input id="CsdSearch" type="search" is="emby-input" placeholder="Title or show" />
                 </div>
+                <div id="CsdBatch" class="csd-hidden" style="margin: 0 0 10px;"></div>
                 <div class="csd-tablebox">
                     <table class="csd-table">
                         <thead><tr><th>Recording</th><th>Added</th><th>Length</th><th style="width: 34%;">Commercials</th><th>Total</th><th>From</th><th></th></tr></thead>
@@ -382,7 +387,8 @@
                 ["all", "All"], ["detected", "With commercials"], ["none", "No commercials"],
                 ["edited", "Edited by hand"], ["cut", "Cut"], ["failed", "Scan failed"]
             ];
-            var state = { rows: [], filter: "all", search: "", page: 0, tab: "list" };
+            var state = { rows: [], filter: "all", search: "", page: 0, tab: "list",
+                settings: null, batch: { Waiting: [], Current: null }, jobs: {}, confirm: null, batchTimer: null };
             var queue = { data: null, all: false, doneShown: 25, timer: null };
             var ed = null;      // the recording open in the editor
             var poll = null;
@@ -452,7 +458,10 @@
                 loadOriginals();
                 return api("GET", "ComskipSegments/Dashboard").then(function (r) {
                     state.rows = r.Items || [];
+                    state.settings = r.Settings || null;
+                    state.batch = r.Batch || { Waiting: [], Current: null };
                     renderList();
+                    watchBatch();
                 }, function () {
                     $("#CsdRows").innerHTML = '<tr><td colspan="7">Couldn\'t load the recordings.</td></tr>';
                 });
@@ -484,7 +493,8 @@
                     var sub = r.Series ? (r.Episode ? r.Episode + " · " : "") + r.Name : (r.Kind === "movie" ? "Movie" : "Video");
                     var len = r.Seconds > 0 ? r.Seconds : 1, c = r.Cut;
                     return "<tr>"
-                        + "<td><div style=\"font-weight:600\">" + esc(title) + '</div><div class="csd-sub">' + esc(sub) + (r.Busy ? " · working on it…" : "") + "</div></td>"
+                        + "<td><div style=\"font-weight:600\">" + esc(title) + '</div><div class="csd-sub">' + esc(sub) + (r.Busy && !inBatch(r.Id) ? " · working on it…" : "") + "</div>"
+                        + (r.LastCut && !r.LastCut.Ok && !inBatch(r.Id) ? '<div class="csd-sub csd-notcut">Not cut: ' + esc(r.LastCut.Message) + "</div>" : "") + "</td>"
                         + '<td class="csd-sub" style="white-space:nowrap">' + (r.Recorded ? new Date(r.Recorded).toLocaleDateString() : "") + "</td>"
                         + '<td class="csd-mono">' + (r.Seconds > 0 ? clock(r.Seconds) : "") + "</td>"
                         + (c ? '<td class="csd-sub">Was ' + clock(c.SecondsBefore) + ". " + originalText(c) + "</td>"
@@ -493,9 +503,12 @@
                         + "<td>" + sourceBadge(r) + "</td>"
                         + '<td style="text-align:right;white-space:nowrap">'
                         + (c && c.OriginalBytes != null ? '<button type="button" class="csd-btn" data-delorig="' + r.Id + '">Delete original</button> ' : "")
+                        + cutCell(r)
                         + '<button type="button" class="csd-btn" data-open="' + r.Id + '">Open</button></td>'
-                        + "</tr>";
+                        + "</tr>"
+                        + (state.confirm === r.Id ? '<tr><td colspan="7">' + cutConfirm(r) + "</td></tr>" : "");
                 }).join("");
+                renderBatch(shown);
                 $("#CsdCount").textContent = shown.length === 0 ? "" : "Showing " + (state.page * PAGE_SIZE + 1) + "–" + (state.page * PAGE_SIZE + slice.length) + " of " + shown.length;
                 $("#CsdPrev").disabled = state.page === 0;
                 $("#CsdNext").disabled = state.page >= pages - 1;
@@ -518,7 +531,17 @@
             $("#CsdNext").addEventListener("click", function () { state.page++; renderList(); });
             $("#CsdRows").addEventListener("click", function (e) {
                 var b = e.target.closest("[data-open]"), d = e.target.closest("[data-delorig]");
-                if (b) {
+                var c = e.target.closest("[data-cut]"), go = e.target.closest("[data-cutgo]");
+                if (c) {
+                    state.confirm = c.getAttribute("data-cut");
+                    renderList();
+                } else if (go) {
+                    go.disabled = true;
+                    queueCuts([go.getAttribute("data-cutgo")]);
+                } else if (e.target.closest("[data-cutcancel]")) {
+                    state.confirm = null;
+                    renderList();
+                } else if (b) {
                     openEditor(b.getAttribute("data-open"));
                 } else if (d) {
                     var row = state.rows.filter(function (r) { return r.Id === d.getAttribute("data-delorig"); })[0];
@@ -532,6 +555,136 @@
                     });
                 }
             });
+
+            // ---- Cut… and Cut all shown… (the server cuts them one at a time) ----
+
+            function inBatch(id) {
+                return state.batch.Current === id || state.batch.Waiting.indexOf(id) >= 0;
+            }
+
+            function cuttable(r) {
+                return r.Status === "detected" && r.Breaks.length > 0 && !r.Busy && !inBatch(r.Id);
+            }
+
+            function keepText() {
+                var s = state.settings || {};
+                return s.KeepOriginal ? "The original is kept, so the cut can be undone."
+                    : s.UndoDays > 0 ? "The original is kept for " + s.UndoDays + " days, so the cut can be undone until then."
+                        : "The original isn't kept: the cut can't be undone.";
+            }
+
+            function plural(n, word) {
+                return n + " " + word + (n === 1 ? "" : "s");
+            }
+
+            // The row's last cell, before Open: where it is in line, or Cut….
+            function cutCell(r) {
+                if (state.batch.Current === r.Id) {
+                    var pct = state.jobs[r.Id];
+                    return '<span class="csd-sub">Cutting' + (pct != null ? " " + pct + "%" : "…") + "</span> ";
+                }
+                var at = state.batch.Waiting.indexOf(r.Id);
+                if (at >= 0) {
+                    return '<span class="csd-sub">Waiting · ' + (at + 1) + "</span> ";
+                }
+                return cuttable(r) ? '<button type="button" class="csd-btn" data-cut="' + r.Id + '">Cut…</button> ' : "";
+            }
+
+            function cutConfirm(r) {
+                var removed = total(r.Breaks), n = r.Breaks.length;
+                return '<div class="csd-confirm"><span class="csd-grow">Cut ' + plural(n, "break") + " (" + clock(removed) + ") out of "
+                    + esc(r.Series ? r.Series + (r.Episode ? " " + r.Episode : "") : r.Name) + ": " + clock(r.Seconds) + " → " + clock(r.Seconds - removed) + ". "
+                    + esc(keepText()) + (state.batch.Current ? " It waits for the cut under way." : "") + "</span>"
+                    + '<button type="button" class="csd-btn danger solid" data-cutgo="' + r.Id + '">Cut ' + plural(n, "break") + "</button>"
+                    + '<button type="button" class="csd-btn" data-cutcancel="1">Cancel</button></div>';
+            }
+
+            // Above the table: the cut under way and how many wait, or Cut all shown….
+            function renderBatch(shown) {
+                var box = $("#CsdBatch"), html = "", b = state.batch;
+                var eligible = shown.filter(cuttable);
+                if (b.Current) {
+                    var cur = state.rows.filter(function (r) { return r.Id === b.Current; })[0];
+                    var pct = state.jobs[b.Current];
+                    html = '<div class="csd-batchline"><strong>Cutting ' + esc(cur ? (cur.Series ? cur.Series + (cur.Episode ? " " + cur.Episode : "") : cur.Name) : "a recording")
+                        + "</strong>" + (pct != null ? '<span class="csd-mono">' + pct + "%</span>" : "")
+                        + '<span class="csd-sub csd-grow">' + (b.Waiting.length ? plural(b.Waiting.length, "more") + " waiting · " : "") + "you can leave this page; the cuts carry on.</span>"
+                        + (b.Waiting.length ? '<button type="button" class="csd-btn" id="CsdBatchStop">Stop the rest</button>' : "") + "</div>";
+                } else if (state.confirm === "all" && eligible.length) {
+                    var breaks = eligible.reduce(function (n, r) { return n + r.Breaks.length; }, 0);
+                    var removed = eligible.reduce(function (t, r) { return t + total(r.Breaks); }, 0);
+                    html = '<div class="csd-confirm"><span class="csd-grow">Cut the commercials out of the ' + plural(eligible.length, "recording") + " shown: "
+                        + plural(breaks, "break") + ", " + clock(removed) + " in all. They're cut one at a time, in the order listed; you can leave this page. "
+                        + esc(keepText().replace("The original is", "Each original is").replace("the cut", "each cut")) + "</span>"
+                        + '<button type="button" class="csd-btn danger solid" id="CsdCutAllGo">Cut ' + plural(eligible.length, "recording") + "</button>"
+                        + '<button type="button" class="csd-btn" data-cutcancel="1">Cancel</button></div>';
+                } else if (eligible.length > 1) {
+                    html = '<button type="button" class="csd-btn" id="CsdCutAll">Cut all shown (' + eligible.length + ")…</button>"
+                        + ' <span class="csd-sub">every recording the search and filter show that has breaks and isn\'t cut yet</span>';
+                }
+                if (state.confirm === "all" && !eligible.length) {
+                    state.confirm = null;
+                }
+                box.innerHTML = html;
+                box.classList.toggle("csd-hidden", !html);
+                box._eligible = eligible.map(function (r) { return r.Id; });
+            }
+
+            $("#CsdBatch").addEventListener("click", function (e) {
+                var box = $("#CsdBatch");
+                if (e.target.id === "CsdCutAll") {
+                    state.confirm = "all";
+                    renderList();
+                } else if (e.target.id === "CsdCutAllGo") {
+                    e.target.disabled = true;
+                    queueCuts(box._eligible || []);
+                } else if (e.target.id === "CsdBatchStop") {
+                    e.target.disabled = true;
+                    api("POST", "ComskipSegments/Dashboard/CutBatch/Stop").then(loadList, loadList);
+                } else if (e.target.closest("[data-cutcancel]")) {
+                    state.confirm = null;
+                    renderList();
+                }
+            });
+
+            function queueCuts(ids) {
+                api("POST", "ComskipSegments/Dashboard/CutBatch", { Ids: ids }).then(function (r) {
+                    state.confirm = null;
+                    state.batch = r.Batch;
+                    loadList();
+                }, function () {
+                    state.confirm = null;
+                    loadList();
+                    window.setTimeout(function () { $("#CsdCount").textContent = "Couldn't start the cuts."; }, 600);
+                });
+            }
+
+            // While cuts are in line: their progress every 2 s, the list again whenever one finishes.
+            function watchBatch() {
+                clearTimeout(state.batchTimer);
+                if (!state.batch.Current && !state.batch.Waiting.length) {
+                    return;
+                }
+                state.batchTimer = window.setTimeout(function () {
+                    if (ed || state.tab !== "list") {
+                        return;
+                    }
+                    var before = (state.batch.Current || "") + "|" + state.batch.Waiting.join(",");
+                    Promise.all([api("GET", "ComskipSegments/Dashboard/CutBatch"), ApiClient.getJSON(ApiClient.getUrl("ComskipSegments/Cuts"))]).then(function (x) {
+                        state.batch = x[0];
+                        state.jobs = {};
+                        (x[1] || []).forEach(function (j) {
+                            state.jobs[j.ItemId] = j.Bytes > 0 ? Math.round(j.DoneBytes / j.Bytes * 100) : 0;
+                        });
+                        if ((state.batch.Current || "") + "|" + state.batch.Waiting.join(",") !== before) {
+                            loadList();
+                        } else {
+                            renderList();
+                            watchBatch();
+                        }
+                    }, function () { watchBatch(); });
+                }, 2000);
+            }
 
             // The space the kept originals of cuts and trims take, all together (a scan of the library folders).
             function loadOriginals() {
