@@ -161,6 +161,52 @@ that case rather than being hidden outright.
 Skip behavior (Auto vs Ask) is Jellyfin's own setting, per user, under playback
 preferences — this plugin only supplies the segments.
 
+### Break edges: Comskip's clock, the junction's picture, and the 15-second check
+
+- **Comskip's clock.** Comskip counts time from the first picture it can decode, while
+  Jellyfin counts from the start of the file. A recording that starts partway through a group of
+  pictures has nothing to decode until the next keyframe, so every break Comskip reports is early
+  by that gap: 1.95 s on one FBI recording, 0.64 s on an Elsbeth one. The skip then cut the end
+  of each act and came back during the last second of the ad. Each scan now reads where the
+  first picture is and moves Comskip's breaks (and its pieces, which the repeat-ad check uses)
+  onto the file's clock. Setting: *Line up Comskip's times with the recording* (on). This applies
+  to new scans. To fix older results, run **Re-run Comskip** on a recording, or press
+  **Re-scan old Comskip results** in Settings (under the break-length check), which queues all of
+  them at once. Each keeps its breaks until its new ones are in, results set by hand or from
+  another program's `.edl` are left alone, and the batch waits behind every other scan, so a new
+  recording never waits for it. The same button stops the batch while it is queued.
+- **The junction's picture.** Then the frames around every edge are decoded (a second or two
+  each) and the edge goes onto the junction: the start to the first black frame between show and
+  ad, the end to the first picture after the black, so the black belongs to the break and no show
+  is lost. With no black there, the edge goes to the nearest hard cut. The nearest, not the
+  strongest: cuts inside an ad are sharper than the one at its edge. An edge with neither within
+  half a second stays put. Settings: *Put break edges on the junction's own picture* (on),
+  *Largest edge move* (0.5 s; an edge already inside a black run follows it to its end).
+- **Break-length check** (Settings, *Check break lengths*). Ads are sold in 15-second units,
+  15.015 s on 29.97 fps TV, so a break whose edges are both right is usually a whole number of
+  them long. Detection never uses that fact, so it works as an independent ruler that needs
+  nothing marked by hand. Each scan stores the ads' own stretch inside every break (black left
+  out), and the check reports the share of breaks on the grid for each group (lined-up scans,
+  older scans, hand-edited, other programs' `.edl`) and for each show, beside the share a random
+  length would get by luck. A break with an odd-length promo in it is right and still off the
+  grid: compare the groups, not single breaks. The idea and the method come from
+  [SmartCut](https://github.com/DeepRegular/SmartCut)'s commercial-detection notes.
+
+- **The recording's early start.** A DVR starts recording a minute before the program, so a
+  recording opens with the end of whatever aired before it. Comskip takes that for show: of 349
+  Comskip results, 262 marked nothing in the first minute or only its first few seconds, while every hand edit
+  starts with a break from 0 to the program's first picture. Each scan now marks from the start
+  of the file to the end of the first black at the program's scheduled start (within 10 s before
+  to 90 s after), and joins a Comskip break that begins within 20 s of it; with no black there, to
+  the scheduled start itself. How early the recording started is noted while it records (the
+  timer's program start against the file's birth time). For older files it is known only from a
+  Channels DVR file name's start time, or a length of whole half hours plus both paddings. On
+  the 8 hand-edited recordings it could test it matched the edit to within about 3 s on 3,
+  stopped short on 4 (a channel that runs a promo or two after the scheduled start, or a black
+  inside the end of the show before), and went 18 s past it on 1, an episode that opens with a
+  cut and no black. Recordings with their start trimmed or their program start
+  marked are left alone. Setting: *Mark the minute a recording starts early* (on).
+
 ### Manual re-detect / clearing a bad result
 
 The config page's "Manual re-detect" section (item ID + buttons) covers three cases for

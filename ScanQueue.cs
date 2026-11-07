@@ -27,6 +27,12 @@ public static class ScanReason
 
     /// <summary>The file was trimmed (audio format or program start), so its breaks moved.</summary>
     public const string AfterTrim = "trim";
+
+    /// <summary>
+    /// Settings' "Re-scan old Comskip results": hundreds at once, so every other scan goes
+    /// ahead of them (a new recording never waits hours behind the batch).
+    /// </summary>
+    public const string Rescan = "rescan";
 }
 
 /// <param name="Force">Scans even outside the automatic scope (a manual scan).</param>
@@ -133,6 +139,10 @@ public sealed class ScanQueue
             if (first)
             {
                 _waiting.Insert(0, entry);
+            }
+            else if (entry.Reason != ScanReason.Rescan && _waiting.FindIndex(e => e.Reason == ScanReason.Rescan) is var batch and >= 0)
+            {
+                _waiting.Insert(batch, entry);
             }
             else
             {

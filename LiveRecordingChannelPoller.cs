@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.ComskipSegments.Configuration;
@@ -86,17 +87,68 @@ public sealed class LiveRecordingChannelPoller : BackgroundService
                 continue;
             }
 
-            if (_channelCache.TryGet(rec.Path, out _))
+            var channel = new ChannelResolver.ChannelInfo(rec.ChannelName, rec.ChannelNumber);
+            if (!_channelCache.TryGet(rec.Path, out _))
             {
-                continue;
+                _channelCache.Set(rec.Path, channel);
+                _logger.LogInformation(
+                    "Captured channel for in-progress recording {Path}: {Name} ({Number})",
+                    rec.Path,
+                    rec.ChannelName,
+                    rec.ChannelNumber);
             }
 
-            _channelCache.Set(rec.Path, new ChannelResolver.ChannelInfo(rec.ChannelName, rec.ChannelNumber));
-            _logger.LogInformation(
-                "Captured channel for in-progress recording {Path}: {Name} ({Number})",
-                rec.Path,
-                rec.ChannelName,
-                rec.ChannelNumber);
+            if (!_channelCache.TryGetLeadIn(rec.Path, out _) && LeadInOf(rec) is { } leadIn)
+            {
+                _channelCache.SetLeadIn(rec.Path, channel, leadIn);
+                _logger.LogInformation("In-progress recording {Path} started {LeadIn:F1}s before its program", rec.Path, leadIn);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The program's start minus when the file was begun (its birth time): the recording's early
+    /// start, 0 when it began on time or after (joined in progress, or a restarted piece). Null
+    /// when either time isn't known or they're too far apart to trust.
+    /// </summary>
+    private static double? LeadInOf(ActiveRecordings.Active rec)
+    {
+        if (rec.ProgramStartUtc is not { } program)
+        {
+            return null;
+        }
+
+        // .NET reads the modify time as a file's creation time on Linux; stat has the birth time.
+        if (BirthUtc(rec.Path) is not { } born)
+        {
+            return null;
+        }
+
+        var early = (program - born).TotalSeconds;
+        return early > 15 * 60 || early < -12 * 3600 ? null : Math.Max(0, Math.Round(early, 1));
+    }
+
+    private static DateTime? BirthUtc(string path)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("stat") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("%W");
+            psi.ArgumentList.Add(path);
+            using var p = System.Diagnostics.Process.Start(psi);
+            if (p is null)
+            {
+                return null;
+            }
+
+            var text = p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(5000);
+            return long.TryParse(text, out var unix) && unix > 946684800 ? DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime : null;
+        }
+        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return null;
         }
     }
 }

@@ -175,7 +175,7 @@ public sealed class BadgeController : ControllerBase
     /// item id or an active recording's id.
     /// </summary>
     [HttpGet("~/ComskipSegments/Live/{id}")]
-    public ActionResult<LiveResponse> Live([FromRoute] string id)
+    public async Task<ActionResult<LiveResponse>> Live([FromRoute] string id, CancellationToken ct)
     {
         var recordings = _serviceProvider.GetService<IRecordingsManager>();
         string? path = null;
@@ -195,8 +195,16 @@ public sealed class BadgeController : ControllerBase
         {
             try
             {
-                var padding = (Plugin.Instance?.Configuration ?? new PluginConfiguration()).PaddingSeconds;
-                segments.AddRange(EdlParser.Parse(edl, padding).Select(b => new LiveSegment("Commercial", b.StartTicks, b.EndTicks)));
+                var cfg = Plugin.Instance?.Configuration ?? new PluginConfiguration();
+                IReadOnlyList<CommercialBreak> breaks = EdlParser.Parse(edl, 0);
+                var ffprobe = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.ProbePath;
+                if (cfg.AlignComskipClock && breaks.Count > 0 && !string.IsNullOrEmpty(ffprobe))
+                {
+                    // Comskip's clock starts at the first decodable picture (see ComskipClock).
+                    breaks = ComskipClock.Shift(breaks, await ComskipClock.LiveOffsetAsync(ffprobe, path, ct).ConfigureAwait(false));
+                }
+
+                segments.AddRange(EdlParser.Pad(breaks, cfg.PaddingSeconds).Select(b => new LiveSegment("Commercial", b.StartTicks, b.EndTicks)));
             }
             catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
             {

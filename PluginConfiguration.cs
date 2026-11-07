@@ -181,6 +181,22 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public double PaddingSeconds { get; set; } = 0.0;
 
+    /// <summary>
+    /// Move Comskip's times onto the file's clock (on by default). Comskip counts from the first
+    /// picture it can decode, so on a recording that starts partway through a group of pictures
+    /// every break it reports is early by that gap (up to about 2 s). See <see cref="Comskip.ComskipClock"/>.
+    /// </summary>
+    public bool AlignComskipClock { get; set; } = true;
+
+    /// <summary>
+    /// Put each break edge on the junction's own picture: the black frames between show and ad,
+    /// or the nearest hard cut (on by default). See <see cref="EdgeSnap"/>.
+    /// </summary>
+    public bool SnapBreakEdges { get; set; } = true;
+
+    /// <summary>How far (seconds) an edge may move when <see cref="SnapBreakEdges"/> is on.</summary>
+    public double SnapBreakEdgesSeconds { get; set; } = 0.5;
+
     /// <summary>Delete Comskip's .txt/.log clutter after a successful parse, keeping only nothing behind.</summary>
     public bool CleanupWorkFiles { get; set; } = true;
 
@@ -236,6 +252,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// end of the file, and mark from there to the end in new scans (on by default). See <see cref="RepeatAds.EndCard"/>.
     /// </summary>
     public bool LearnEndCard { get; set; } = true;
+
+    /// <summary>
+    /// Mark the minute a recording starts early by (Jellyfin's and Channels DVR's pre-padding): from
+    /// the start of the file to the first black at the program's scheduled start (on by default).
+    /// See <see cref="LeadIn"/>.
+    /// </summary>
+    public bool MarkRecordingLeadIn { get; set; } = true;
 
     /// <summary>
     /// Master switch for the audio-format trim feature. Some broadcast recordings open

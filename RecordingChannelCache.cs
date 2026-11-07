@@ -44,7 +44,28 @@ public sealed class RecordingChannelCache
         _cache = Load();
     }
 
-    private sealed record Entry(ChannelResolver.ChannelInfo Channel, DateTime CapturedUtc);
+    /// <param name="LeadInSeconds">How long before its program the recording started (0: on time or joined late), from its timer; see <see cref="LeadIn"/>.</param>
+    private sealed record Entry(ChannelResolver.ChannelInfo Channel, DateTime CapturedUtc, double? LeadInSeconds = null);
+
+    /// <summary>How long before its program the recording at <paramref name="recordingPath"/> started, when its timer was seen.</summary>
+    public bool TryGetLeadIn(string recordingPath, out double seconds)
+    {
+        if (_cache.TryGetValue(Normalize(recordingPath), out var entry) && entry.LeadInSeconds is { } s)
+        {
+            seconds = s;
+            return true;
+        }
+
+        seconds = 0;
+        return false;
+    }
+
+    public void SetLeadIn(string recordingPath, ChannelResolver.ChannelInfo channel, double seconds)
+    {
+        var key = Normalize(recordingPath);
+        _cache[key] = _cache.TryGetValue(key, out var e) ? e with { LeadInSeconds = seconds } : new Entry(channel, DateTime.UtcNow, seconds);
+        Persist();
+    }
 
     public bool TryGet(string recordingPath, out ChannelResolver.ChannelInfo info)
     {
@@ -60,7 +81,8 @@ public sealed class RecordingChannelCache
 
     public void Set(string recordingPath, ChannelResolver.ChannelInfo info)
     {
-        _cache[Normalize(recordingPath)] = new Entry(info, DateTime.UtcNow);
+        var key = Normalize(recordingPath);
+        _cache[key] = new Entry(info, DateTime.UtcNow, _cache.TryGetValue(key, out var old) ? old.LeadInSeconds : null);
         Persist();
     }
 

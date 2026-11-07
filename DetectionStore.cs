@@ -29,13 +29,22 @@ public enum DetectionStatus
 /// field existed, which were all Comskip runs.</param>
 /// <param name="RepeatSeconds">Seconds of breaks the repeat-ad check added to Comskip's.</param>
 /// <param name="RemovedSeconds">Seconds of Comskip's breaks it gave back to the show (learned from hand-edited episodes).</param>
+/// <param name="ClockOffset">Seconds Comskip's times were moved onto the file's clock (see
+/// <see cref="Comskip.ComskipClock"/>); null on scans from before that was done, whose breaks are
+/// still on Comskip's clock.</param>
+/// <param name="EdgesSnapped">The break edges were put on the junction's picture (see <see cref="EdgeSnap"/>).</param>
+/// <param name="AdSpans">Where the ads alone run inside the breaks (between the black at each
+/// edge), for those whose edges are both on a junction; measured by <see cref="BreakRuler"/>.</param>
 public sealed record DetectionRecord(
     DetectionStatus Status,
     IReadOnlyList<CommercialBreak> Breaks,
     DateTime UpdatedUtc,
     string? Source = null,
     double RepeatSeconds = 0,
-    double RemovedSeconds = 0)
+    double RemovedSeconds = 0,
+    double? ClockOffset = null,
+    bool EdgesSnapped = false,
+    IReadOnlyList<CommercialBreak>? AdSpans = null)
 {
     public const string SourceComskip = "comskip";
     public const string SourceEdl = "edl";

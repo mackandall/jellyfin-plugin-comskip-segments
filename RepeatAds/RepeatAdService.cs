@@ -493,8 +493,11 @@ public sealed class RepeatAdService
                     continue;
                 }
 
-                _detections.Save(id, new DetectionRecord(
-                    DetectionStatus.Detected, merged, DateTime.UtcNow, DetectionRecord.SourceComskip, record.RepeatSeconds + added, record.RemovedSeconds));
+                _detections.Save(id, record with
+                {
+                    Status = DetectionStatus.Detected, Breaks = merged, UpdatedUtc = DateTime.UtcNow,
+                    Source = DetectionRecord.SourceComskip, RepeatSeconds = record.RepeatSeconds + added
+                });
                 WriteEdlBeside(item.Path, merged);
                 var segments = _serviceProvider.GetRequiredService<IMediaSegmentManager>();
                 await segments.RunSegmentPluginProviders(item, _libraryManager.GetLibraryOptions(item), true, CancellationToken.None).ConfigureAwait(false);

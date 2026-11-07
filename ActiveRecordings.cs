@@ -20,7 +20,8 @@ namespace Jellyfin.Plugin.ComskipSegments.Detection;
 /// </summary>
 public static class ActiveRecordings
 {
-    public sealed record Active(string Path, string? Name, string? ChannelName, string? ChannelNumber, IReadOnlyList<string>? TimerIds = null);
+    /// <param name="ProgramStartUtc">When the program itself starts (the timer's start, before padding).</param>
+    public sealed record Active(string Path, string? Name, string? ChannelName, string? ChannelNumber, IReadOnlyList<string>? TimerIds = null, DateTime? ProgramStartUtc = null);
 
     public static async Task<IReadOnlyList<Active>> ListAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
@@ -45,7 +46,8 @@ public static class ActiveRecordings
 
             var channel = timer.ChannelId != Guid.Empty ? library?.GetItemById(timer.ChannelId) as LiveTvChannel : null;
             active.Add(new Active(path, timer.Name, timer.ChannelName ?? channel?.Name, channel?.Number,
-                new[] { timer.Id, timer.ExternalId }.OfType<string>().ToList()));
+                new[] { timer.Id, timer.ExternalId }.OfType<string>().ToList(),
+                timer.StartDate == default ? null : timer.StartDate.ToUniversalTime()));
         }
 
         return active;

@@ -69,6 +69,22 @@ public static class EdlParser
 
         return breaks;
     }
+
+    /// <summary>Each break trimmed by <paramref name="paddingSeconds"/> at both ends (as <see cref="Parse"/> does); ones that close up are dropped.</summary>
+    public static IReadOnlyList<CommercialBreak> Pad(IReadOnlyList<CommercialBreak> breaks, double paddingSeconds)
+    {
+        var pad = (long)(paddingSeconds * TicksPerSecond);
+        var result = new List<CommercialBreak>(breaks.Count);
+        foreach (var b in breaks)
+        {
+            if (b.EndTicks - pad > b.StartTicks + pad)
+            {
+                result.Add(new CommercialBreak(b.StartTicks + pad, b.EndTicks - pad));
+            }
+        }
+
+        return result;
+    }
 }
 
 /// <summary>Writes commercial breaks as an .edl, the way Comskip does (seconds, tab-separated, action 0).</summary>

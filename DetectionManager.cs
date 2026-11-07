@@ -157,6 +157,62 @@ public sealed class DetectionManager : BackgroundService
     }
 
     /// <summary>
+    /// Comskip's breaks and pieces moved onto the file's clock (see <see cref="ComskipClock"/>);
+    /// as they were when the gap can't be read.
+    /// </summary>
+    private async Task<(IReadOnlyList<CommercialBreak> Breaks, IReadOnlyList<ComskipPiece>? Pieces, double Offset)> AlignClockAsync(
+        string path, IReadOnlyList<CommercialBreak> breaks, IReadOnlyList<ComskipPiece>? pieces, CancellationToken ct)
+    {
+        var ffprobe = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.ProbePath;
+        if (string.IsNullOrEmpty(ffprobe))
+        {
+            return (breaks, pieces, 0);
+        }
+
+        try
+        {
+            var offset = await ComskipClock.OffsetAsync(ffprobe, path, ct).ConfigureAwait(false);
+            if (offset > 0)
+            {
+                _logger.LogInformation("Comskip's times for {Path} moved {Offset:F3}s later: its clock starts at the first decodable picture, not the start of the file", path, offset);
+            }
+
+            return (ComskipClock.Shift(breaks, offset), ComskipClock.Shift(pieces, offset), offset);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Could not read where the first picture of {Path} is; keeping Comskip's times as they are", path);
+            return (breaks, pieces, 0);
+        }
+    }
+
+    /// <summary>The breaks with their edges on the junction's picture (see <see cref="EdgeSnap"/>); as they were when that fails.</summary>
+    private async Task<(IReadOnlyList<CommercialBreak> Breaks, EdgeSnap.Result? Result)> SnapEdgesAsync(
+        string path, IReadOnlyList<CommercialBreak> breaks, double window, CancellationToken ct)
+    {
+        var encoder = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>();
+        if (string.IsNullOrEmpty(encoder?.EncoderPath) || string.IsNullOrEmpty(encoder.ProbePath))
+        {
+            return (breaks, null);
+        }
+
+        try
+        {
+            var started = System.Diagnostics.Stopwatch.StartNew();
+            var r = await EdgeSnap.SnapAsync(encoder.EncoderPath, encoder.ProbePath, path, breaks, Math.Clamp(window, 0.1, 2), ct).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Break edges of {Path}: {Black} on black, {Cut} on a cut, {Unchanged} left as found (largest move {Move:F2}s, {Ms} ms)",
+                path, r.Black, r.Cut, r.Unchanged, r.MaxMoveSeconds, started.ElapsedMilliseconds);
+            return (r.Breaks, r);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Snapping break edges failed for {Path}; keeping them as they were", path);
+            return (breaks, null);
+        }
+    }
+
+    /// <summary>
     /// The breaks with a silent opening (see <see cref="SilentOpening"/>) marked as one; the
     /// same list when the recording doesn't open that way.
     /// </summary>
@@ -189,6 +245,70 @@ public sealed class DetectionManager : BackgroundService
             _logger.LogWarning(ex, "Silent-opening check failed for {Path}; keeping the breaks as they were", path);
             return breaks;
         }
+    }
+
+    /// <summary>
+    /// The breaks with the recording's early start (see <see cref="LeadIn"/>) marked as a break;
+    /// the same list when it didn't start early, its start was trimmed, or its program start is known.
+    /// </summary>
+    private async Task<IReadOnlyList<CommercialBreak>> LeadInAsync(BaseItem item, IReadOnlyList<CommercialBreak> breaks, CancellationToken ct)
+    {
+        var path = item.Path!;
+        if (Editing.TrimBackups.Find(path) is not null || _programStart.HasStart(item.Id)
+            || _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>() is not { } encoder
+            || string.IsNullOrEmpty(encoder.EncoderPath) || string.IsNullOrEmpty(encoder.ProbePath))
+        {
+            return breaks;
+        }
+
+        var (pre, post) = LiveTvPadding();
+        double? known = _channelCache.TryGetLeadIn(path, out var seen) ? seen : null;
+        if ((known ?? LeadIn.Seconds(path, (item.RunTimeTicks ?? 0) / 1e7, pre, post)) is not { } leadIn || leadIn < 5)
+        {
+            return breaks;
+        }
+
+        try
+        {
+            var (from, to) = LeadIn.Window(leadIn);
+            var runs = await EdgeSnap.BlackRunsAsync(encoder.EncoderPath, encoder.ProbePath, path, from, to, ct).ConfigureAwait(false);
+            var end = LeadIn.End(runs, leadIn);
+            var result = LeadIn.Apply(breaks, end, out var changed);
+            if (changed)
+            {
+                var was = breaks.OrderBy(b => b.StartTicks).Cast<CommercialBreak?>().FirstOrDefault();
+                _logger.LogInformation(
+                    "Early start of {Path} ({LeadIn:F0}s before the program): marked 0–{End:F1}s as a break{How} (first break was {Was})",
+                    path, leadIn, result[0].EndTicks / 1e7, end == leadIn ? ", no black at the program's start" : string.Empty,
+                    was is { } w ? $"{w.StartTicks / 1e7:F1}–{w.EndTicks / 1e7:F1}s" : "none");
+            }
+
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Early-start check failed for {Path}; keeping the breaks as they were", path);
+            return breaks;
+        }
+    }
+
+    /// <summary>Jellyfin's Live TV pre- and post-padding in seconds (60/60 when it can't be read).</summary>
+    private (double Pre, double Post) LiveTvPadding()
+    {
+        try
+        {
+            if (_serviceProvider.GetService<MediaBrowser.Common.Configuration.IConfigurationManager>()?.GetConfiguration("livetv")
+                is MediaBrowser.Model.LiveTv.LiveTvOptions o)
+            {
+                return (o.PrePaddingSeconds, o.PostPaddingSeconds);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not read the Live TV padding; using 60 s");
+        }
+
+        return (60, 60);
     }
 
     /// <summary>What <see cref="Enqueue"/> did with an item.</summary>
@@ -961,6 +1081,17 @@ public sealed class DetectionManager : BackgroundService
         _deferrals.TryRemove(itemId, out _);
         _deferredSince.TryRemove(itemId, out _);
 
+        // A re-scan of an old result only while it still is one: cut or edited by hand while it
+        // waited, a scan now would put Comskip's guesses back over that.
+        _store.TryGet(itemId, out var before);
+        if (job.Entry.Reason == ScanReason.Rescan
+            && (before is null || before.Status != DetectionStatus.Detected || before.ClockOffset is not null
+                || (before.Source ?? DetectionRecord.SourceComskip) != DetectionRecord.SourceComskip))
+        {
+            _logger.LogInformation("Re-scan of an old result skipped for {Path}: its result changed since it was queued", item.Path);
+            return Done(job, "skipped", 0, "Its result changed since it was queued", false);
+        }
+
         // Audio-format trim runs BEFORE Comskip, and only as part of the automatic
         // pipeline here (the manual item-menu/config-page path calls AudioTrimService
         // directly). Running it first means Comskip always scans the FINAL file, so the
@@ -1095,13 +1226,31 @@ public sealed class DetectionManager : BackgroundService
         var ranComskip = harvestedEdlPath is null;
         if (result.Outcome == ComskipOutcome.Failed || result.EdlPath is null)
         {
-            // Record as Failed (NOT NoCommercials) so it stays eligible for a retry.
             fpCancel.Cancel();
+
+            // A re-scan that failed keeps the breaks the recording had. Stopping Jellyfin stops
+            // Comskip first (exit code 143, before the scan hears of the shutdown), and two
+            // re-scans running through an install lost their breaks that way (2026-11-06).
+            if (_store.TryGet(itemId, out var had) && had.Status == DetectionStatus.Detected && had.Breaks.Count > 0)
+            {
+                _logger.LogInformation("Scan of {Path} failed ({Error}); it keeps the {Count} break(s) it had", item.Path, result.Error, had.Breaks.Count);
+                return Done(job, "failed", had.Breaks.Count, (result.Error ?? "Comskip failed") + "; kept the breaks it had", false);
+            }
+
+            // Record as Failed (NOT NoCommercials) so it stays eligible for a retry.
             _store.Save(itemId, new DetectionRecord(DetectionStatus.Failed, Array.Empty<CommercialBreak>(), DateTime.UtcNow, DetectionRecord.SourceComskip));
             return Done(job, "failed", 0, result.Error ?? "Comskip failed", false);
         }
 
-        IReadOnlyList<CommercialBreak> breaks = EdlParser.Parse(result.EdlPath, cfg.PaddingSeconds);
+        // Unpadded until the edges are where they belong: padding goes on last.
+        IReadOnlyList<CommercialBreak> breaks = EdlParser.Parse(result.EdlPath, 0);
+        var pieces = result.Pieces;
+        var clockOffset = 0.0;
+        if (cfg.AlignComskipClock)
+        {
+            (breaks, pieces, clockOffset) = await AlignClockAsync(item.Path, breaks, pieces, ct).ConfigureAwait(false);
+        }
+
         double repeatAdded = 0, repeatRemoved = 0;
         var learnedFrom = 0;
         if (fingerprint is not null)
@@ -1112,13 +1261,8 @@ public sealed class DetectionManager : BackgroundService
                 if (await fingerprint.ConfigureAwait(false) is { } fp)
                 {
                     var check = await _repeats.CheckAsync(
-                        item, fp, breaks, result.Pieces, id => IsInFlight(id) || _cuts.IsBusy(id), ct).ConfigureAwait(false);
+                        item, fp, breaks, pieces, id => IsInFlight(id) || _cuts.IsBusy(id), ct).ConfigureAwait(false);
                     (breaks, repeatAdded, repeatRemoved, learnedFrom) = (check.Breaks, check.AddedSeconds, check.RemovedSeconds, check.EditedEpisodes);
-                    if (repeatAdded > 0 || repeatRemoved > 0)
-                    {
-                        // The work copy is what gets placed beside the recording below.
-                        EdlWriter.Write(result.EdlPath, breaks);
-                    }
                 }
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -1132,10 +1276,27 @@ public sealed class DetectionManager : BackgroundService
             job.Stage = "saving";
         }
 
-        var beforeEdges = breaks;
+        EdgeSnap.Result? snapped = null;
+        if (cfg.SnapBreakEdges && breaks.Count > 0)
+        {
+            job.Stage = "edges";
+            (breaks, snapped) = await SnapEdgesAsync(item.Path, breaks, cfg.SnapBreakEdgesSeconds, ct).ConfigureAwait(false);
+            job.Stage = "saving";
+        }
+
+        if (cfg.PaddingSeconds != 0)
+        {
+            breaks = EdlParser.Pad(breaks, cfg.PaddingSeconds);
+        }
+
         if (cfg.MarkSilentOpening)
         {
             breaks = await SilentOpeningAsync(item.Path, breaks, ct).ConfigureAwait(false);
+        }
+
+        if (cfg.MarkRecordingLeadIn && !audioTrimApplied)
+        {
+            breaks = await LeadInAsync(item, breaks, ct).ConfigureAwait(false);
         }
 
         if (cfg.LearnEndCard)
@@ -1143,14 +1304,23 @@ public sealed class DetectionManager : BackgroundService
             breaks = await EndCardAsync(item, breaks, ct).ConfigureAwait(false);
         }
 
-        if (!ReferenceEquals(breaks, beforeEdges))
+        // The work copy is what gets placed beside the recording below: on the file's clock, with
+        // every change above (Comskip's own .edl is on its clock, see ComskipClock).
+        EdlWriter.Write(result.EdlPath, breaks);
+
+        // Cut or edited by hand while Comskip ran: that wins, this scan's breaks are dropped.
+        if (_store.TryGet(itemId, out var now) && now.UpdatedUtc != before?.UpdatedUtc
+            && now.Source is DetectionRecord.SourceEdited or DetectionRecord.SourceCut)
         {
-            // The work copy is what gets placed beside the recording below.
-            EdlWriter.Write(result.EdlPath, breaks);
+            _logger.LogInformation("Scan of {Path} dropped: the recording was {What} while Comskip ran", item.Path,
+                now.Source == DetectionRecord.SourceCut ? "cut" : "edited by hand");
+            return Done(job, "skipped", 0, now.Source == DetectionRecord.SourceCut ? "Cut while it was being scanned" : "Edited by hand while it was being scanned", true);
         }
 
         var status = breaks.Count > 0 ? DetectionStatus.Detected : DetectionStatus.NoCommercials;
-        _store.Save(itemId, new DetectionRecord(status, breaks, DateTime.UtcNow, DetectionRecord.SourceComskip, repeatAdded, repeatRemoved));
+        _store.Save(itemId, new DetectionRecord(
+            status, breaks, DateTime.UtcNow, DetectionRecord.SourceComskip, repeatAdded, repeatRemoved,
+            cfg.AlignComskipClock ? clockOffset : null, snapped is not null, snapped?.AdSpans));
 
         _logger.LogInformation("{Status}: {Count} break(s) for {Path}", status, breaks.Count, item.Path);
 
