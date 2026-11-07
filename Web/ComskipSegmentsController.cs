@@ -270,7 +270,7 @@ public sealed class ComskipSegmentsController : ControllerBase
                 }
             }
 
-            _store.Save(itemId, new DetectionRecord(DetectionStatus.NoCommercials, Array.Empty<Jellyfin.Plugin.ComskipSegments.Comskip.CommercialBreak>(), DateTime.UtcNow, "cleared"));
+            _store.Save(itemId, new DetectionRecord(DetectionStatus.NoCommercials, Array.Empty<Jellyfin.Plugin.ComskipSegments.Comskip.CommercialBreak>(), DateTime.UtcNow, DetectionRecord.SourceCleared));
             _logger.LogInformation("Removed commercials from {Path}; automatic detection will leave it alone", item.Path);
             return Ok(new ClearResponse(true, "Commercials removed."));
         }

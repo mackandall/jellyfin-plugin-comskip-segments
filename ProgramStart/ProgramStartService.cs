@@ -119,10 +119,15 @@ public sealed class ProgramStartService
         }
     }
 
-    /// <summary>Whether an automatic search would do anything for this item.</summary>
-    /// <summary>The program start of this recording is known (marked, found by a card, or trimmed to).</summary>
-    public bool HasStart(Guid itemId) => _store.TryGet(itemId, out _);
+    /// <summary>
+    /// The program start of this recording is known (marked, found by a card, or trimmed to).
+    /// A search that found no card, or an undone trim, leaves it unknown.
+    /// </summary>
+    public bool HasStart(Guid itemId) =>
+        _store.TryGet(itemId, out var r)
+        && r.Source is ProgramStartRecord.SourceManual or ProgramStartRecord.SourceCard or ProgramStartRecord.SourceCardAuto;
 
+    /// <summary>Whether an automatic search would do anything for this item.</summary>
     public bool WantsAutomatic(BaseItem item) =>
         Config.ProgramStartAutomatic && _store.Cards.Count > 0 && !_store.TryGet(item.Id, out _) && !_cuts.IsBusy(item.Id);
 

@@ -543,8 +543,15 @@
   }
 
   // Lets the item menu drop a cached result after "Scan for commercials".
+  // The show and season cards count their episodes, so they're asked again too.
   window.__comskipBadgesInvalidate = function (id) {
     delete cache[id];
+    Object.keys(cache).forEach(function (k) {
+      var b = cache[k] && cache[k].badge;
+      if (b && (b.State === 'summary' || b.Total != null)) {
+        delete cache[k];
+      }
+    });
     schedule();
   };
 

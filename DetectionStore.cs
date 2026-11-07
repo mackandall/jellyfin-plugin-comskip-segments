@@ -54,6 +54,9 @@ public sealed record DetectionRecord(
 
     /// <summary>The commercials were cut out of the file (see <see cref="Editing.CommercialCutService"/>).</summary>
     public const string SourceCut = "cut";
+
+    /// <summary>Remove commercials: the marks were taken off by hand; automatic detection leaves it alone.</summary>
+    public const string SourceCleared = "cleared";
 }
 
 /// <summary>

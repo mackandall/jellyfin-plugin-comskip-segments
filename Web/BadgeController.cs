@@ -273,8 +273,9 @@ public sealed class BadgeController : ControllerBase
                 {
                     failed = true;
                 }
-                else
+                else if (record.Source != DetectionRecord.SourceCleared)
                 {
+                    // Commercials removed by hand: that episode isn't marked any more.
                     done++;
                 }
             }
