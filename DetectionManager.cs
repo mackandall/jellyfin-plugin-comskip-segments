@@ -186,6 +186,23 @@ public sealed class DetectionManager : BackgroundService
         }
     }
 
+    /// <summary>The letterbox samples of <paramref name="path"/> (see <see cref="Letterbox"/>); null when that fails.</summary>
+    private async Task<IReadOnlyList<Letterbox.Sample>?> MeasureLetterboxAsync(string ffmpeg, string path, CancellationToken ct)
+    {
+        try
+        {
+            return await Letterbox.MeasureAsync(ffmpeg, path, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Letterbox check failed for {Path}; keeping the breaks as they were", path);
+            return null;
+        }
+    }
+
+    private static string Spans(IReadOnlyList<CommercialBreak> breaks) =>
+        string.Join(", ", breaks.Select(b => $"{b.StartTicks / 1e7:F0}–{b.EndTicks / 1e7:F0}s"));
+
     /// <summary>The breaks with their edges on the junction's picture (see <see cref="EdgeSnap"/>); as they were when that fails.</summary>
     private async Task<(IReadOnlyList<CommercialBreak> Breaks, EdgeSnap.Result? Result)> SnapEdgesAsync(
         string path, IReadOnlyList<CommercialBreak> breaks, double window, CancellationToken ct)
@@ -1181,6 +1198,16 @@ public sealed class DetectionManager : BackgroundService
             fingerprint = Task.Run(() => _repeats.FingerprintAsync(path, fpCancel.Token), fpCancel.Token);
         }
 
+        // The letterbox check reads the file alongside Comskip too (keyframes only, ~30 s for half an hour).
+        Task<IReadOnlyList<Letterbox.Sample>?>? letterbox = null;
+        if (cfg.GiveBackLetterboxedShow
+            && _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.EncoderPath is { Length: > 0 } lbFfmpeg
+            && (harvestedEdlPath is not null || ComskipInstaller.IsInstalled(cfg)))
+        {
+            var path = item.Path;
+            letterbox = Task.Run(() => MeasureLetterboxAsync(lbFfmpeg, path, fpCancel.Token), fpCancel.Token);
+        }
+
         ComskipRunResult result;
         if (harvestedEdlPath is not null)
         {
@@ -1249,6 +1276,26 @@ public sealed class DetectionManager : BackgroundService
         if (cfg.AlignComskipClock)
         {
             (breaks, pieces, clockOffset) = await AlignClockAsync(item.Path, breaks, pieces, ct).ConfigureAwait(false);
+        }
+
+        // Before the repeat-ad check, so a letterboxed trailer heard in other recordings is still marked.
+        double letterboxed = 0;
+        if (letterbox is not null && breaks.Count > 0)
+        {
+            job.Stage = "letterbox";
+            if (await letterbox.ConfigureAwait(false) is { } samples)
+            {
+                var was = breaks;
+                breaks = Letterbox.Apply(breaks, samples, Math.Clamp(cfg.LetterboxMinSeconds, 30, 600), out letterboxed);
+                if (letterboxed > 0)
+                {
+                    _logger.LogInformation(
+                        "Letterboxed show in the breaks of {Path}: {Seconds:F0}s given back ({Was} → {Now})",
+                        item.Path, letterboxed, Spans(was), Spans(breaks));
+                }
+            }
+
+            job.Stage = "saving";
         }
 
         double repeatAdded = 0, repeatRemoved = 0;
@@ -1343,6 +1390,7 @@ public sealed class DetectionManager : BackgroundService
             string.Join("; ", new[]
             {
                 ranComskip ? null : "From the scan that ran while it recorded",
+                letterboxed > 0 ? $"{Clock(letterboxed)} of letterboxed show given back" : null,
                 repeatAdded > 0 ? $"{Clock(repeatAdded)} of ads added" + (learnedFrom > 0 ? "" : " (heard in other shows)") : null,
                 repeatRemoved > 0 ? $"{Clock(repeatRemoved)} given back to the show" : null,
                 learnedFrom > 0 && (repeatAdded > 0 || repeatRemoved > 0) ? $"learned from {learnedFrom} hand-edited episode{(learnedFrom == 1 ? "" : "s")}" : null

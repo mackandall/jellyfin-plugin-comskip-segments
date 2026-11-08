@@ -329,6 +329,17 @@
                     <div class="fieldDescription">Comskip counts time from the first picture it can show, not from the start of the file. A recording that starts mid-picture-group has up to about 2 seconds before that picture, and Comskip's breaks are then early by exactly that much: the skip cuts the end of the show and the show comes back in the last second of the ad. This moves them to where they are in the file.</div>
 
                     <label class="checkboxContainer">
+                        <input id="GiveBackLetterboxedShow" name="GiveBackLetterboxedShow" type="checkbox" is="emby-checkbox" />
+                        <span>Give letterboxed show back from the breaks</span>
+                    </label>
+                    <div class="fieldDescription">For shows with black bars above and below the picture whose ads fill the screen. Comskip only counts a stretch as show when it's longer than about 4 minutes, so a short opening act gets marked as an ad. After each scan the top of every keyframe is checked (about 30 seconds for a half-hour recording), and a letterboxed stretch inside a break is given back to the show. Nothing changes when the show isn't letterboxed or its ads are too.</div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LetterboxMinSeconds">Shortest stretch given back (seconds)</label>
+                        <input id="LetterboxMinSeconds" name="LetterboxMinSeconds" type="number" min="30" max="600" step="10" is="emby-input" />
+                        <div class="fieldDescription">Shorter letterboxed stretches stay in the break: they may be movie trailers.</div>
+                    </div>
+
+                    <label class="checkboxContainer">
                         <input id="SnapBreakEdges" name="SnapBreakEdges" type="checkbox" is="emby-checkbox" />
                         <span>Put break edges on the junction's own picture</span>
                     </label>
@@ -554,6 +565,8 @@
                 page.querySelector("#PaddingSeconds").value = config.PaddingSeconds || 0;
                 page.querySelector("#AlignComskipClock").checked = config.AlignComskipClock !== false;
                 page.querySelector("#SnapBreakEdges").checked = config.SnapBreakEdges !== false;
+                page.querySelector("#GiveBackLetterboxedShow").checked = config.GiveBackLetterboxedShow !== false;
+                page.querySelector("#LetterboxMinSeconds").value = config.LetterboxMinSeconds != null ? config.LetterboxMinSeconds : 120;
                 page.querySelector("#SnapBreakEdgesSeconds").value = config.SnapBreakEdgesSeconds != null ? config.SnapBreakEdgesSeconds : 0.5;
                 page.querySelector("#CleanupWorkFiles").checked = !!config.CleanupWorkFiles;
                 page.querySelector("#PlaceEdlBesideRecording").checked = !!config.PlaceEdlBesideRecording;
@@ -954,6 +967,9 @@
                         config.PaddingSeconds = parseFloat(page.querySelector("#PaddingSeconds").value) || 0;
                         config.AlignComskipClock = page.querySelector("#AlignComskipClock").checked;
                         config.SnapBreakEdges = page.querySelector("#SnapBreakEdges").checked;
+                        config.GiveBackLetterboxedShow = page.querySelector("#GiveBackLetterboxedShow").checked;
+                        var lbSeconds = parseFloat(page.querySelector("#LetterboxMinSeconds").value);
+                        config.LetterboxMinSeconds = isNaN(lbSeconds) ? 120 : Math.min(600, Math.max(30, lbSeconds));
                         var snapSeconds = parseFloat(page.querySelector("#SnapBreakEdgesSeconds").value);
                         config.SnapBreakEdgesSeconds = isNaN(snapSeconds) ? 0.5 : Math.min(2, Math.max(0.1, snapSeconds));
                         config.CleanupWorkFiles = page.querySelector("#CleanupWorkFiles").checked;

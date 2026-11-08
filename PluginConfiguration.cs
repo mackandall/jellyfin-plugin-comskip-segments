@@ -189,6 +189,16 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool AlignComskipClock { get; set; } = true;
 
     /// <summary>
+    /// When a show is letterboxed (black bars above and below) and its ads aren't, give a
+    /// letterboxed stretch inside a break back to the show (on by default): Comskip calls a short
+    /// act an ad. See <see cref="Letterbox"/>.
+    /// </summary>
+    public bool GiveBackLetterboxedShow { get; set; } = true;
+
+    /// <summary>The shortest letterboxed stretch (seconds) given back with <see cref="GiveBackLetterboxedShow"/>; shorter ones may be letterboxed trailers.</summary>
+    public double LetterboxMinSeconds { get; set; } = 120;
+
+    /// <summary>
     /// Put each break edge on the junction's own picture: the black frames between show and ad,
     /// or the nearest hard cut (on by default). See <see cref="EdgeSnap"/>.
     /// </summary>
