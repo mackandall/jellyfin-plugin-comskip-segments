@@ -341,6 +341,17 @@ public sealed class RecordingTrimmer
 
         psi.ArgumentList.Add("-c");
         psi.ArgumentList.Add("copy");
+
+        // The cut starts on the keyframe before the movie's sound (and the padding before that), so
+        // a few seconds of the old layout's sound (2.0) would open the file, and Jellyfin takes the
+        // whole file's layout from its first sound: Dune: Part Two showed as stereo. That sound is
+        // dropped; the picture still starts on its keyframe (packet times here are from the cut).
+        if (plan.CoreStartSeconds is { } core && core - plan.LeadTrimSeconds > 0.05)
+        {
+            psi.ArgumentList.Add("-bsf:a");
+            psi.ArgumentList.Add("noise=drop='lt(pts*tb," + (core - plan.LeadTrimSeconds).ToString("F3", CultureInfo.InvariantCulture) + ")'");
+        }
+
         psi.ArgumentList.Add("-avoid_negative_ts");
         psi.ArgumentList.Add("make_zero");
 

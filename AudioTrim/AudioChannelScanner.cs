@@ -26,7 +26,8 @@ public sealed record TrimPlan(
     double TotalDurationSeconds,
     double CoreDurationSeconds,
     int CoreChannels,
-    string Reason)
+    string Reason,
+    double? CoreStartSeconds = null)
 {
     public static TrimPlan NotNeeded(double totalDuration, string reason) =>
         new(false, 0, 0, totalDuration, totalDuration, 0, reason);
@@ -124,7 +125,8 @@ public sealed class AudioChannelScanner
             totalDuration,
             core.DurationSeconds,
             core.Channels,
-            $"core {core.Channels}ch run covers {coreFraction:P0} of the recording; trimming {lead:F1}s lead / {trail:F1}s trail");
+            $"core {core.Channels}ch run covers {coreFraction:P0} of the recording; trimming {lead:F1}s lead / {trail:F1}s trail",
+            core.StartSeconds);
     }
 
     /// <summary>
