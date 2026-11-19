@@ -82,7 +82,53 @@
         #ComskipDashboardPage .csd-grid button span { position: absolute; left: 3px; bottom: 3px; padding: 0 5px; border-radius: 3px; background: rgba(0,0,0,0.75); color: #fff; font-size: 11px; }
         #ComskipDashboardPage .csd-grid button.brk { box-shadow: inset 0 -5px 0 #e53935; }
         #ComskipDashboardPage .csd-grid button.cur { border-color: #fff; }
-        #ComskipDashboardPage .csd-frame .csd-where { position: absolute; right: 10px; bottom: 10px; padding: 3px 9px; border-radius: 4px; background: rgba(229,57,53,0.85); color: #fff; }
+        #ComskipDashboardPage .csd-frame .csd-where { position: absolute; right: 10px; bottom: 10px; display: flex; flex-wrap: nowrap; white-space: nowrap; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border-radius: 6px; border-left: 4px solid #e53935; background: rgba(0,0,0,0.8); color: #fff; }
+        #ComskipDashboardPage .csd-where b { color: #ff8a80; }
+        #ComskipDashboardPage .csd-where .csd-btn { min-height: 32px; padding: 0 10px; font-size: 0.9em; background: rgba(255,255,255,0.1); }
+        #ComskipDashboardPage .csd-edgelbl { position: absolute; top: -21px; padding: 0 5px; border-radius: 3px; background: #e53935; color: #fff; font-family: monospace; font-size: 0.8em; white-space: nowrap; pointer-events: none; }
+        #ComskipDashboardPage .csd-edgelbl.s { transform: translateX(-100%); border-radius: 3px 0 3px 3px; }
+        #ComskipDashboardPage .csd-edgelbl.e { border-radius: 0 3px 3px 3px; }
+        #ComskipDashboardPage .csd-bp { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+        #ComskipDashboardPage .csd-bp-h { display: flex; align-items: center; gap: 8px; }
+        #ComskipDashboardPage .csd-bp-h h4 { margin: 0; flex: 1; text-align: center; }
+        #ComskipDashboardPage .csd-edge { margin-top: 10px; padding: 10px; border-radius: 8px; background: rgba(0,0,0,0.25); }
+        #ComskipDashboardPage .csd-edge-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+        #ComskipDashboardPage .csd-edge-t { font-family: monospace; color: #ff8a80; }
+        #ComskipDashboardPage .csd-edge .csd-row { gap: 4px; margin-top: 6px; }
+        #ComskipDashboardPage .csd-mini { display: flex; gap: 3px; min-height: 30px; }
+        #ComskipDashboardPage .csd-mini button { flex: 1 1 0; min-width: 0; position: relative; aspect-ratio: 16 / 9; padding: 0; border: 0; border-radius: 3px; background: #000; overflow: hidden; cursor: pointer; }
+        #ComskipDashboardPage .csd-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        #ComskipDashboardPage .csd-mini .brk::after, #ComskipDashboardPage .csd-ev-strip .brk .f::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #e53935; }
+        #ComskipDashboardPage .csd-mini .edge::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #f5a524; z-index: 1; }
+        #ComskipDashboardPage .csd-mini-lbl { display: flex; justify-content: space-between; font-size: 0.8em; opacity: 0.7; margin-top: 3px; }
+        #ComskipDashboardPage .csd-ev-h { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        #ComskipDashboardPage .csd-ev-h h3 { margin: 0; }
+        #ComskipDashboardPage .csd-ev-pics { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 12px; }
+        #ComskipDashboardPage .csd-ev-pics figure { margin: 0; flex: 1 1 320px; min-width: 0; max-width: calc(34vh * 16 / 9); }
+        #ComskipDashboardPage .csd-ev-pic { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
+        #ComskipDashboardPage .csd-ev-pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        #ComskipDashboardPage .csd-ev-pic img:not([src]) { visibility: hidden; }
+        #ComskipDashboardPage .csd-ev-pic.brk { outline: 3px solid #e53935; outline-offset: -3px; }
+        #ComskipDashboardPage .csd-ev-pic .t, #ComskipDashboardPage .csd-ev-pic .tag { position: absolute; top: 8px; padding: 3px 8px; border-radius: 4px; background: rgba(0,0,0,0.75); color: #fff; }
+        #ComskipDashboardPage .csd-ev-pic .t { left: 8px; font-family: monospace; }
+        #ComskipDashboardPage .csd-ev-pic .tag { right: 8px; font-weight: 600; }
+        #ComskipDashboardPage .csd-ev-pic.brk .tag { color: #ff8a80; }
+        #ComskipDashboardPage .csd-ev-strip { display: flex; gap: 6px; margin-top: 6px; cursor: pointer; touch-action: none; user-select: none; }
+        #ComskipDashboardPage .csd-ev-strip > div { flex: 1 1 0; min-width: 0; position: relative; }
+        #ComskipDashboardPage .csd-ev-strip .f { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 4px; overflow: hidden; }
+        #ComskipDashboardPage .csd-ev-strip img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; -webkit-user-drag: none; }
+        #ComskipDashboardPage .csd-ev-strip img:not([src]) { visibility: hidden; }
+        #ComskipDashboardPage .csd-ev-strip .key .f::before { content: "K"; position: absolute; left: 2px; top: 1px; font-size: 10px; font-weight: 700; color: #fff; background: #00a4dc; padding: 0 3px; border-radius: 2px; z-index: 1; }
+        #ComskipDashboardPage .csd-ev-strip .edge::before { content: ""; position: absolute; left: -5px; top: -4px; bottom: 14px; width: 4px; border-radius: 2px; background: #f5a524; box-shadow: 0 0 8px 1px rgba(245,165,36,0.8); }
+        #ComskipDashboardPage .csd-ev-strip .o { display: block; text-align: center; font-family: monospace; font-size: 0.75em; opacity: 0.65; margin-top: 2px; }
+        #ComskipDashboardPage .csd-ev-strip .edge .o { color: #f5a524; opacity: 1; font-weight: 700; }
+        #ComskipDashboardPage .csd-ev-zoom { position: relative; height: 40px; margin-top: 30px; border-radius: 6px; background: rgba(255,255,255,0.12); cursor: ew-resize; touch-action: none; user-select: none; }
+        #ComskipDashboardPage .csd-ev-zoom .b { position: absolute; top: 6px; bottom: 6px; background: #e53935; opacity: 0.85; }
+        #ComskipDashboardPage .csd-ev-zoom .bl { position: absolute; top: 0; bottom: 0; min-width: 2px; background: #000; outline: 1px solid #888; }
+        #ComskipDashboardPage .csd-ev-zoom .k { position: absolute; bottom: 0; height: 10px; width: 1px; background: rgba(255,255,255,0.7); }
+        #ComskipDashboardPage .csd-ev-zoom .g { position: absolute; top: -6px; bottom: -6px; width: 12px; margin-left: -6px; border-radius: 3px; background: #f5a524; box-shadow: 0 0 0 2px #101010; pointer-events: none; }
+        #ComskipDashboardPage .csd-ev-zoom .lbl { position: absolute; top: -24px; transform: translateX(-50%); font-family: monospace; font-size: 0.85em; color: #f5a524; white-space: nowrap; pointer-events: none; }
+        #ComskipDashboardPage .csd-ev-ticks { display: flex; justify-content: space-between; font-family: monospace; font-size: 0.8em; opacity: 0.7; margin-top: 4px; }
         #ComskipDashboardPage .csd-timeline { position: relative; height: 52px; background: rgba(255,255,255,0.12); border-radius: 6px; margin-top: 22px; cursor: pointer; touch-action: none; user-select: none; }
         #ComskipDashboardPage .csd-block { position: absolute; top: 6px; bottom: 6px; background: #e53935; border-radius: 4px; opacity: 0.85; }
         #ComskipDashboardPage .csd-block.sel { opacity: 1; box-shadow: 0 0 0 2px #fff; }
@@ -243,7 +289,42 @@
                 </div>
                 <div id="CsdMeta" class="csd-sub"></div>
 
-                <div class="csd-split" style="margin-top: 1em;">
+                <div id="CsdEdgeView" class="csd-panel csd-hidden">
+                    <div class="csd-ev-h">
+                        <button type="button" class="csd-btn" id="CsdEvBack" title="Esc">‹ Whole recording</button>
+                        <h3 id="CsdEvTitle"></h3>
+                        <span class="csd-grow"></span>
+                        <span class="csd-sub" id="CsdEvWas"></span>
+                        <button type="button" class="csd-btn" id="CsdEvUndo">Undo</button>
+                        <button type="button" class="csd-btn" id="CsdEvOther"></button>
+                    </div>
+                    <div class="csd-ev-pics">
+                        <figure><div class="csd-ev-pic" id="CsdEvA"><img alt="" /><span class="t"></span><span class="tag"></span></div><figcaption class="csd-sub"></figcaption></figure>
+                        <figure><div class="csd-ev-pic" id="CsdEvB"><img alt="" /><span class="t"></span><span class="tag"></span></div><figcaption class="csd-sub"></figcaption></figure>
+                    </div>
+                    <div class="csd-row csd-sub" style="justify-content: space-between; margin-top: 14px;"><span id="CsdEvL"></span><span id="CsdEvHow"></span><span id="CsdEvR"></span></div>
+                    <div class="csd-ev-strip" id="CsdEvStrip"></div>
+                    <div class="csd-ev-zoom" id="CsdEvZoom" aria-label="40 seconds around the edge: drag along it to move the edge"></div>
+                    <div class="csd-ev-ticks" id="CsdEvTicks"></div>
+                    <div class="csd-sub" style="margin-top: 4px;">±20 seconds around the edge. Red: breaks · ticks: keyframes · black: black frames found with the Black buttons. Drag along it to move the edge; it lands on the nearest frame.</div>
+                    <div class="csd-row" style="margin-top: 14px;">
+                        <b id="CsdEvMoveLbl"></b>
+                        <button type="button" class="csd-btn" data-nav="black-">‹ Black</button>
+                        <button type="button" class="csd-btn" data-nav="key-">‹ Key</button>
+                        <button type="button" class="csd-btn" data-nav="-1s">−1 s</button>
+                        <button type="button" class="csd-btn" data-nav="-1">‹ Frame</button>
+                        <button type="button" class="csd-btn" data-nav="+1">Frame ›</button>
+                        <button type="button" class="csd-btn" data-nav="+1s">+1 s</button>
+                        <button type="button" class="csd-btn" data-nav="key+">Key ›</button>
+                        <button type="button" class="csd-btn" data-nav="black+">Black ›</button>
+                        <span class="csd-grow"></span>
+                        <button type="button" class="csd-btn primary" id="CsdEvDone">Done</button>
+                    </div>
+                    <div class="csd-sub" id="CsdEvMsg" style="margin-top: 8px; min-height: 1.2em;"></div>
+                    <div class="fieldDescription">Every button and key here moves the edge itself. Keys: ← → a frame (Shift: a second), ↑ ↓ or Ctrl+← → a keyframe, , . black frames, [ ] the start or the end, Esc back to the whole recording. Scroll over the pictures to step a frame. Nothing is kept until you Save.</div>
+                </div>
+
+                <div class="csd-split" id="CsdSplit" style="margin-top: 1em;">
                     <div class="csd-preview">
                         <div class="csd-frame" id="CsdFrame" tabindex="0" aria-label="The picture at the playhead: scroll or use the arrow keys to step through frames">
                             <img id="CsdImg" alt="" />
@@ -306,12 +387,14 @@
                         </div>
                         <details class="csd-tips">
                             <summary>Keys and tips</summary>
-                            <div class="fieldDescription">Scroll over the picture, the frames or the timeline to step one frame (Shift: a second, Ctrl: a keyframe). Drag the frames below the picture (or their scroll bar) to look along them without moving; the frame you're on has a yellow frame, and a yellow button brings you back to it. Keys: ← → frame, Shift+← → second, ↑ ↓ keyframe, , . black, [ ] break start and end, Space play / stop, J K L reverse / stop / play (again: faster: 1×, 2×, 4×, 8×, 16×, 32×). Sound plays forward up to 4×; 16× and 32× show a picture at every keyframe.</div>
+                            <div class="fieldDescription">Scroll over the picture, the frames or the timeline to step one frame (Shift: a second, Ctrl: a keyframe). Drag the frames below the picture (or their scroll bar) to look along them without moving; the frame you're on has a yellow frame, and a yellow button brings you back to it. Keys: ← → frame, Shift+← → second, ↑ ↓ keyframe, , . black, [ ] break starts / ends here, { } (Shift+[ ]) go to where the selected break starts / ends, Space play / stop, J K L reverse / stop / play (again: faster: 1×, 2×, 4×, 8×, 16×, 32×). Sound plays forward up to 4×; 16× and 32× show a picture at every keyframe.</div>
                             <div class="fieldDescription">To mark a new break, press <b>Break starts here</b> where it starts (it lights up), go to where it ends and press <b>Break ends here</b>; either order works, and pressing the lit button again cancels. Inside a break, the buttons move that break's start or end. A new break that overlaps others joins them.</div>
+                            <div class="fieldDescription">The panel beside the picture shows the selected break (the one you're in, or the last one clicked): a few frames either side of where it starts and where it ends, ⇤ / ⇥ to go there, and buttons that move that edge a frame, a keyframe or to black frames. <b>Close up…</b> opens one edge big: the last frame before it and the first after it, a row of frames across it to click or drag, and 40 seconds of timeline around it.</div>
                             <div class="fieldDescription">Point at the timeline to see the picture there; click, or drag along it to scrub. Drag a break's edges to move its start or end. Blue along the top: other segments (intros, a program-start preview), not edited here. On a cut recording, green marks are where the cut joined the parts it kept. Picture (top right) sets the picture's size, or drag its bottom-right corner; Fit the window keeps the controls and the timeline in view.</div>
                         </details>
                     </div>
                     <div class="csd-side csd-panel" style="margin: 0;">
+                        <div id="CsdBreakPanel" class="csd-bp csd-hidden"></div>
                         <div id="CsdInfo"></div>
                         <div class="csd-row" style="margin-top: 12px;">
                             <button type="button" class="csd-btn" id="CsdRescan">Re-run Comskip</button>
@@ -326,7 +409,7 @@
                     <div class="csd-grid" id="CsdGrid"></div>
                 </div>
 
-                <div class="csd-panel">
+                <div class="csd-panel" id="CsdBreaksBox">
                     <div class="csd-row" style="justify-content: space-between;">
                         <h3 style="margin: 0;">Commercial breaks</h3>
                         <button type="button" class="csd-btn" id="CsdAdd">+ Add a break at the playhead</button>
@@ -1093,8 +1176,11 @@
                 $("#CsdCutBtn").title = ed.dirty ? "Save your changes first" : (d.CutRefusal || "");
 
                 $("#CsdJoins").classList.toggle("csd-hidden", !cut || !(d.Joins || []).length);
+                showEdgeView();
                 renderTimeline();
                 renderBreaks();
+                renderBreakPanel();
+                renderEdgeView();
                 renderCutState();
                 sizePicture();
             }
@@ -1117,6 +1203,8 @@
                     + (ed.d.Joins || []).map(function (j) {
                         return '<div class="csd-join" style="left:' + (j.At / len * 100) + '%" title="Joined here: ' + clock(j.Removed) + ' taken out"></div>';
                     }).join("")
+                    + (ed.breaks[ed.sel] ? '<span class="csd-edgelbl s" style="left:' + (ed.breaks[ed.sel].Start / len * 100) + '%">' + clock(ed.breaks[ed.sel].Start, true) + "</span>"
+                        + '<span class="csd-edgelbl e" style="left:' + (ed.breaks[ed.sel].End / len * 100) + '%">' + clock(ed.breaks[ed.sel].End, true) + "</span>" : "")
                     + '<div class="csd-head" style="left:' + (ed.head / len * 100) + '%"></div>';
                 renderJoinInfo();
             }
@@ -1127,10 +1215,12 @@
                 $("#CsdBreaks").innerHTML = ed.breaks.map(function (b, i) {
                     return '<tr data-i="' + i + '"' + (i === ed.sel ? ' class="sel"' : "") + ">"
                         + "<td>" + (i + 1) + "</td>"
-                        + '<td><input aria-label="Break ' + (i + 1) + ' start" data-field="Start" value="' + clock(b.Start, true) + '"' + (cut ? " disabled" : "") + "></td>"
-                        + '<td><input aria-label="Break ' + (i + 1) + ' end" data-field="End" value="' + clock(b.End, true) + '"' + (cut ? " disabled" : "") + "></td>"
+                        + '<td style="white-space:nowrap"><button type="button" class="csd-btn sm" data-edgego="' + i + ':Start" title="Go to where it starts" aria-label="Go to where break ' + (i + 1) + ' starts">⇤</button> '
+                        + '<input aria-label="Break ' + (i + 1) + ' start" data-field="Start" value="' + clock(b.Start, true) + '"' + (cut ? " disabled" : "") + "></td>"
+                        + '<td style="white-space:nowrap"><input aria-label="Break ' + (i + 1) + ' end" data-field="End" value="' + clock(b.End, true) + '"' + (cut ? " disabled" : "") + "> "
+                        + '<button type="button" class="csd-btn sm" data-edgego="' + i + ':End" title="Go to where it ends" aria-label="Go to where break ' + (i + 1) + ' ends">⇥</button></td>'
                         + '<td class="csd-mono">' + clock(b.End - b.Start) + "</td>"
-                        + '<td style="text-align:right;white-space:nowrap"><button type="button" class="csd-btn" data-go="' + i + '">Go to</button> '
+                        + '<td style="text-align:right;white-space:nowrap">'
                         + (cut ? "" : '<button type="button" class="csd-btn" data-del="' + i + '" aria-label="Delete break ' + (i + 1) + '">Delete</button>') + "</td>"
                         + "</tr>";
                 }).join("");
@@ -1144,14 +1234,492 @@
                 renderEditor();
             }
 
-            function select(i, goTo) {
+            function select(i, go) {
                 ed.sel = i;
-                if (goTo && ed.breaks[i]) {
-                    ed.head = ed.breaks[i].Start;
-                    frame();
+                if (go && ed.breaks[i]) {
+                    goToEdge(ed.breaks[i].Start);
                 }
                 renderTimeline();
                 renderBreaks();
+                renderBreakPanel();
+            }
+
+            // ---- A break's start and end ----
+            // The panel beside the picture shows the selected break's two edges (a few frames either
+            // side of each); ⇤ / ⇥ go there, the buttons under them move the edge itself. "Close up"
+            // opens the edge view: the last frame before the edge and the first after it, big, a row
+            // of frames across it, 40 seconds of timeline around it. While an edge is being moved
+            // (ed.follow), wherever the playhead lands is where that edge goes.
+            var edgeCache = {};
+
+            // The first frame at or after t, among the frames in hand: the frame an edge at t is on.
+            function edgeIdx(t) {
+                var l = cache.list, lo = 0, hi = l.length - 1, found = l.length;
+                while (lo <= hi) {
+                    var mid = (lo + hi) >> 1;
+                    if (l[mid].T >= t - 0.0005) { found = mid; hi = mid - 1; } else { lo = mid + 1; }
+                }
+                return found;
+            }
+
+            // Goes to the frame an edge at t is on (goTo lands on the frame at or before t).
+            function goToEdge(t) {
+                return goTo(t).then(function () {
+                    var l = cache.list, i = indexAt(ed.head);
+                    if (covers(t) && i >= 0 && l[i].T < t - 0.0005 && l[i + 1]) {
+                        ed.head = l[i + 1].T;
+                        showFrame();
+                    }
+                });
+            }
+
+            function goBreakEdge(i, edge) {
+                var b = ed.breaks[i];
+                if (!b) {
+                    return;
+                }
+                if (ed.ev) {
+                    switchEdge(edge);
+                    return;
+                }
+                ed.follow = null;
+                ed.sel = i;
+                renderBreaks();
+                renderBreakPanel();
+                goToEdge(b[edge]);
+            }
+
+            function edgeName(edge) {
+                return edge === "Start" ? "start" : "end";
+            }
+
+            // Whether the break can start (or end) at t: before its other edge, not into the next break.
+            function edgeRefusal(b, edge, t) {
+                var i = ed.breaks.indexOf(b), prev = ed.breaks[i - 1], next = ed.breaks[i + 1];
+                if (edge === "Start") {
+                    return t >= b.End - 0.1 ? "that's past where it ends" : prev && t < prev.End ? "break " + i + " is still on there" : "";
+                }
+                return t <= b.Start + 0.1 ? "that's before where it starts" : next && t > next.Start ? "break " + (i + 2) + " has started there" : "";
+            }
+
+            // The edge being moved goes where the playhead is (called each time a frame shows).
+            function applyFollow() {
+                var f = ed.follow;
+                if (!f) {
+                    return;
+                }
+                var b = f.b, i = ed.breaks.indexOf(b);
+                if (i < 0) {
+                    ed.follow = null;
+                    return;
+                }
+                var t = ed.head, now = b[f.edge];
+                var same = covers(t) && covers(now) ? edgeIdx(now) === indexAt(t) : Math.abs(now - t) < 0.0005;
+                if (same) {
+                    return;
+                }
+                var no = edgeRefusal(b, f.edge, t);
+                if (no) {
+                    (ed.ev ? $("#CsdEvMsg") : $("#CsdSaveResult")).textContent = "Break " + (i + 1) + " can't " + edgeName(f.edge) + " at " + clock(t, true) + ": " + no + ".";
+                    return;
+                }
+                b[f.edge] = t;
+                edgeChanged();
+            }
+
+            function edgeChanged() {
+                ed.dirty = true;
+                $("#CsdSaveResult").textContent = "";
+                if (ed.ev) {
+                    $("#CsdEvMsg").textContent = "";
+                }
+                renderEditor();
+                setTimeout(markGrid, 0);
+            }
+
+            // A button under one of the panel's edges: the playhead onto that edge, then the step,
+            // which takes the edge with it.
+            function nudgeEdge(edge, what) {
+                var b = ed.breaks[ed.sel];
+                if (!b || ed.d.Row.Status === "cut") {
+                    return;
+                }
+                stopPlay(true);
+                ed.follow = { b: b, edge: edge };
+                var on = covers(ed.head) && covers(b[edge]) && indexAt(ed.head) === edgeIdx(b[edge]);
+                (on ? Promise.resolve() : goToEdge(b[edge])).then(function () {
+                    if (ed.follow && ed.follow.b === b && ed.follow.edge === edge) {
+                        nav(what);
+                    }
+                });
+            }
+
+            // Anything else done in the editor (a click, a key, the wheel) stops moving the edge,
+            // except in the edge view, where moving the edge is what everything does.
+            function dropFollow(e) {
+                if (ed && ed.follow && !ed.ev && !(e.target && e.target.closest && e.target.closest("[data-enav]"))) {
+                    ed.follow = null;
+                }
+            }
+            page.addEventListener("pointerdown", dropFollow, true);
+            page.addEventListener("wheel", dropFollow, true);
+            document.addEventListener("keydown", dropFollow, true);
+
+            // "In break 2 · 18:42.100 → 21:15.480 · ⇤ Start · End ⇥" on the picture.
+            function renderWhere(inside) {
+                // A small picture gets the short version, so the bar doesn't cover it.
+                var where = $("#CsdWhere"), i = ed.breaks.indexOf(inside), wide = $("#CsdFrame").clientWidth >= 560;
+                var html = inside ? "<b>" + (wide ? "In break " : "Break ") + (i + 1) + "</b>"
+                    + (wide ? '<span class="csd-mono">' + clock(inside.Start, true) + " → " + clock(inside.End, true) + "</span>" : "")
+                    + '<button type="button" class="csd-btn" data-edgego="' + i + ':Start" title="Go to where it starts ({)" aria-label="Go to where break ' + (i + 1) + ' starts">' + (wide ? "⇤ Start" : "⇤") + "</button>"
+                    + '<button type="button" class="csd-btn" data-edgego="' + i + ':End" title="Go to where it ends (})" aria-label="Go to where break ' + (i + 1) + ' ends">' + (wide ? "End ⇥" : "⇥") + "</button>" : "";
+                where.classList.toggle("csd-hidden", !inside);
+                if (where._html !== html) {
+                    where._html = html;
+                    where.innerHTML = html;
+                }
+            }
+
+            // A few frames either side of an edge: from the frames in hand, or small ones from the server.
+            function edgeFrames(t) {
+                var l = cache.list;
+                if (covers(t)) {
+                    var i = edgeIdx(t);
+                    if (i - 3 >= 0 && i + 2 < l.length) {
+                        return { list: l.slice(i - 3, i + 3), at: 3 };
+                    }
+                }
+                var id = ed.id, key = id + "|" + t.toFixed(3), c = edgeCache[key];
+                if (c) {
+                    return c === "loading" ? null : c;
+                }
+                if (Object.keys(edgeCache).length > 200) {
+                    edgeCache = {};
+                }
+                edgeCache[key] = "loading";
+                var fps = frameRate();
+                api("GET", "ComskipSegments/Dashboard/" + id + "/Frames?seconds=" + Math.max(0, t - 3.5 / fps).toFixed(3) + "&count=8&width=200").then(function (r) {
+                    var got = (r.Frames || []).map(function (f) { return { T: f.T, Key: f.Key, src: "data:image/jpeg;base64," + f.Jpeg }; });
+                    var before = got.filter(function (f) { return f.T < t - 0.0005; }).slice(-3);
+                    var after = got.filter(function (f) { return f.T >= t - 0.0005; }).slice(0, 3);
+                    edgeCache[key] = { list: before.concat(after), at: before.length };
+                    if (ed && ed.id === id) {
+                        renderBreakPanel();
+                    }
+                }).catch(function () {
+                    delete edgeCache[key];
+                });
+                return null;
+            }
+
+            function renderBreakPanel() {
+                var box = $("#CsdBreakPanel"), i = ed.sel, b = ed.breaks[i];
+                box.classList.toggle("csd-hidden", !b);
+                if (!b) {
+                    box._html = "";
+                    box.innerHTML = "";
+                    return;
+                }
+                var cut = ed.d.Row.Status === "cut", n = ed.breaks.length;
+                var html = '<div class="csd-bp-h">'
+                    + '<button type="button" class="csd-btn sm" data-edgego="' + (i - 1) + ':Start"' + (i > 0 ? "" : " disabled") + ">‹ Break " + Math.max(1, i) + "</button>"
+                    + "<h4>Break " + (i + 1) + ' <span class="csd-sub">· ' + clock(b.End - b.Start, true) + "</span></h4>"
+                    + '<button type="button" class="csd-btn sm" data-edgego="' + (i + 1) + ':Start"' + (i < n - 1 ? "" : " disabled") + ">Break " + Math.min(n, i + 2) + " ›</button></div>";
+                ["Start", "End"].forEach(function (edge) {
+                    var fr = edgeFrames(b[edge]), start = edge === "Start";
+                    html += '<div class="csd-edge"><div class="csd-edge-h"><b>Where it ' + (start ? "starts" : "ends") + '</b><span class="csd-edge-t">' + clock(b[edge], true) + "</span></div>"
+                        + '<div class="csd-mini">' + (fr ? fr.list.map(function (f, k) {
+                            var inBreak = ed.breaks.some(function (x) { return f.T >= x.Start && f.T < x.End; });
+                            return '<button type="button" data-goto="' + f.T + '" title="' + clock(f.T, true) + '" class="' + (inBreak ? "brk " : "") + (k === fr.at ? "edge" : "") + '"><img alt="" src="' + f.src + '"></button>';
+                        }).join("") : '<span class="csd-sub">Loading frames…</span>') + "</div>"
+                        + '<div class="csd-mini-lbl"><span>◂ ' + (start ? "show" : "break") + "</span><span>" + (start ? "break" : "show") + " ▸</span></div>"
+                        + '<div class="csd-row"><button type="button" class="csd-btn sm primary" data-edgego="' + i + ":" + edge + '">' + (start ? "⇤ Go to start" : "Go to end ⇥") + "</button>"
+                        + (cut ? "" : '<button type="button" class="csd-btn sm" data-edgeview="' + edge + '">Close up…</button>') + "</div>"
+                        + (cut ? "" : '<div class="csd-row">' + [["black-", "‹ Black"], ["key-", "‹ Key"], ["-1", "‹ Frame"], ["+1", "Frame ›"], ["key+", "Key ›"], ["black+", "Black ›"]].map(function (x) {
+                            return '<button type="button" class="csd-btn sm" data-enav="' + edge + ":" + x[0] + '" title="Move where it ' + (start ? "starts" : "ends") + '">' + x[1] + "</button>";
+                        }).join("") + "</div>")
+                        + "</div>";
+                });
+                if (!cut) {
+                    html += '<div class="csd-sub" style="margin-top:6px">The buttons under each edge move the edge, not just the playhead.</div>';
+                }
+                if (box._html !== html) {
+                    box._html = html;
+                    box.innerHTML = html;
+                }
+            }
+
+            // ---- The edge view ----
+            var EV_N = 6, EV_ZOOM = 20;
+            (function () {
+                var st = $("#CsdEvStrip");
+                for (var k = -EV_N; k <= EV_N; k++) {
+                    var d = document.createElement("div");
+                    d.setAttribute("data-k", k);
+                    d.innerHTML = '<div class="f"><img alt="" draggable="false"></div><span class="o">' + (k === 0 ? "edge" : (k > 0 ? "+" + k : "−" + -k)) + "</span>";
+                    st.appendChild(d);
+                }
+            })();
+
+            function openEdgeView(edge) {
+                var b = ed.breaks[ed.sel];
+                if (!b || ed.d.Row.Status === "cut") {
+                    return;
+                }
+                stopPlay(true);
+                ed.ev = { b: b, edge: edge, was: { Start: b.Start, End: b.End }, zc: null };
+                ed.follow = { b: b, edge: edge };
+                $("#CsdEvMsg").textContent = "";
+                showEdgeView();
+                goToEdge(b[edge]);
+                renderEdgeView();
+                $("#CsdEdgeView").scrollIntoView({ block: "start" });
+            }
+
+            function switchEdge(edge) {
+                if (!ed.ev || ed.ev.edge === edge) {
+                    return;
+                }
+                ed.ev.edge = edge;
+                ed.follow = { b: ed.ev.b, edge: edge };
+                $("#CsdEvMsg").textContent = "";
+                goToEdge(ed.ev.b[edge]);
+                renderEdgeView();
+            }
+
+            function closeEdgeView() {
+                if (!ed.ev) {
+                    return;
+                }
+                ed.ev = null;
+                ed.follow = null;
+                showEdgeView();
+                renderBreakPanel();
+                sizePicture();
+                renderStrip(true);
+                renderTimeline();
+            }
+
+            function showEdgeView() {
+                var on = !!(ed && ed.ev);
+                $("#CsdEdgeView").classList.toggle("csd-hidden", !on);
+                $("#CsdSplit").classList.toggle("csd-hidden", on);
+                $("#CsdBreaksBox").classList.toggle("csd-hidden", on);
+                $("#CsdGridBox").classList.toggle("csd-hidden", on || !$("#CsdGridBtn").classList.contains("lit"));
+            }
+
+            function setPic(box, f, tag, caption, inBreak) {
+                var img = box.querySelector("img");
+                if (f) {
+                    if (img.getAttribute("src") !== f.src) {
+                        img.src = f.src;
+                    }
+                } else {
+                    img.removeAttribute("src");
+                }
+                box.classList.toggle("brk", !!f && inBreak);
+                box.querySelector(".t").textContent = f ? clock(f.T, true) : "";
+                box.querySelector(".tag").textContent = tag;
+                box.parentNode.querySelector("figcaption").textContent = f ? caption : "Loading frames…";
+            }
+
+            function renderEdgeView() {
+                if (!ed || !ed.ev) {
+                    return;
+                }
+                var ev = ed.ev, b = ev.b, edge = ev.edge, n = ed.breaks.indexOf(b), start = edge === "Start";
+                if (n < 0) {
+                    closeEdgeView();
+                    return;
+                }
+                var t = b[edge], was = ev.was[edge], fps = frameRate(), l = cache.list, i = covers(t) ? edgeIdx(t) : -1;
+                $("#CsdEvTitle").innerHTML = "Break " + (n + 1) + ' <span class="csd-sub">›</span> where it ' + (start ? "starts" : "ends");
+                var diff = t - was, frames = covers(t) && covers(was) ? Math.abs(edgeIdx(t) - edgeIdx(was)) : Math.round(Math.abs(diff) * fps);
+                $("#CsdEvWas").textContent = Math.abs(diff) < 0.0005 ? "At " + clock(t, true) + ", as it was"
+                    : "Was " + clock(was, true) + " · now " + clock(t, true) + " (" + (Math.abs(diff) >= 2 ? Math.abs(diff).toFixed(1) + " s" : frames + " frame" + (frames === 1 ? "" : "s")) + (diff < 0 ? " earlier)" : " later)");
+                $("#CsdEvUndo").disabled = Math.abs(diff) < 0.0005;
+                $("#CsdEvOther").textContent = start ? "Where it ends ⇥" : "⇤ Where it starts";
+                $("#CsdEvL").textContent = start ? "◂ show" : "◂ break";
+                $("#CsdEvR").textContent = start ? "break ▸" : "show ▸";
+                $("#CsdEvHow").textContent = "Drag the amber line, or click the frame " + (start ? "the break should start on" : "the show comes back on");
+                $("#CsdEvMoveLbl").textContent = start ? "Move the start" : "Move the end";
+                var a = i > 0 ? l[i - 1] : null, z = i >= 0 && i < l.length ? l[i] : null;
+                setPic($("#CsdEvA"), a, start ? "Show" : "Break", start ? "The last frame before the break: kept." : "The break's last frame: skipped.", !start);
+                setPic($("#CsdEvB"), z, start ? "Break starts" : "Show again", start ? "The break's first frame: skipped from here." : "The first frame after the break: the show is back.", start);
+                var cells = $("#CsdEvStrip").children, drag = ev.dragK;
+                for (var k = -EV_N; k <= EV_N; k++) {
+                    var cell = cells[k + EV_N], f = i >= 0 ? l[i + k] : null, img = cell.querySelector("img");
+                    if (f) {
+                        if (img.getAttribute("src") !== f.src) {
+                            img.src = f.src;
+                        }
+                    } else {
+                        img.removeAttribute("src");
+                    }
+                    var inBreak = !!f && ed.breaks.some(function (x) { return f.T >= x.Start && f.T < x.End; });
+                    cell.className = (inBreak ? "brk " : "") + (f && f.Key ? "key " : "") + ((drag != null ? k === drag : k === 0) ? "edge" : "");
+                    cell.title = f ? clock(f.T, true) : "";
+                }
+                renderZoom();
+            }
+
+            function renderZoom() {
+                var ev = ed.ev, b = ev.b, t = b[ev.edge], c = ev.zc != null ? ev.zc : t, a = c - EV_ZOOM, z = c + EV_ZOOM, w = 2 * EV_ZOOM;
+                var pct = function (x) { return ((x - a) / w * 100).toFixed(3) + "%"; };
+                var html = ed.breaks.filter(function (x) { return x.End > a && x.Start < z; }).map(function (x) {
+                    var s = Math.max(a, x.Start), e = Math.min(z, x.End);
+                    return '<div class="b" style="left:' + pct(s) + ";width:" + ((e - s) / w * 100).toFixed(3) + '%"></div>';
+                }).join("") + (ed.blacks || []).filter(function (r) { return r.End > a && r.Start < z; }).map(function (r) {
+                    var s = Math.max(a, r.Start), e = Math.min(z, r.End);
+                    return '<div class="bl" style="left:' + pct(s) + ";width:" + ((e - s) / w * 100).toFixed(3) + '%" title="Black ' + clock(r.Start, true) + " – " + clock(r.End, true) + '"></div>';
+                }).join("");
+                var keys = {};
+                ov.list.concat(cache.list.filter(function (f) { return f.Key; })).forEach(function (f) {
+                    if (f.T >= a && f.T <= z) {
+                        keys[f.T.toFixed(2)] = f.T;
+                    }
+                });
+                html += Object.keys(keys).map(function (k) { return '<div class="k" style="left:' + pct(keys[k]) + '"></div>'; }).join("");
+                html += '<div class="g" style="left:' + pct(t) + '"></div><span class="lbl" style="left:' + pct(t) + '">' + clock(t, true) + "</span>";
+                $("#CsdEvZoom").innerHTML = html;
+                $("#CsdEvTicks").innerHTML = [a, a + w / 4, c, a + 3 * w / 4, z].map(function (x) { return "<span>" + clock(x) + "</span>"; }).join("");
+            }
+
+            // The row across the edge: click a frame to put the edge on it, or drag the amber line.
+            var evDrag = null;
+            $("#CsdEvStrip").addEventListener("pointerdown", function (e) {
+                if (!ed || !ed.ev) {
+                    return;
+                }
+                evDrag = { x: e.clientX, moved: false, cell: e.target.closest("[data-k]") };
+                this.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+            $("#CsdEvStrip").addEventListener("pointermove", function (e) {
+                if (!evDrag) {
+                    return;
+                }
+                if (Math.abs(e.clientX - evDrag.x) > 5) {
+                    evDrag.moved = true;
+                }
+                if (evDrag.moved) {
+                    var r = this.getBoundingClientRect(), j = Math.round((e.clientX - r.left) / (r.width / (2 * EV_N + 1)));
+                    ed.ev.dragK = Math.max(-EV_N, Math.min(EV_N, j - EV_N));
+                    renderEdgeView();
+                }
+            });
+            function endEvDrag(e) {
+                if (!evDrag) {
+                    return;
+                }
+                var d = evDrag, k = d.moved ? ed.ev.dragK : d.cell ? Number(d.cell.getAttribute("data-k")) : null;
+                evDrag = null;
+                ed.ev.dragK = null;
+                var l = cache.list, i = edgeIdx(ed.ev.b[ed.ev.edge]), f = e.type === "pointerup" && k != null ? l[i + k] : null;
+                if (f) {
+                    goTo(f.T);
+                } else {
+                    renderEdgeView();
+                }
+            }
+            $("#CsdEvStrip").addEventListener("pointerup", endEvDrag);
+            $("#CsdEvStrip").addEventListener("pointercancel", endEvDrag);
+
+            // The 40 seconds around the edge: drag along it.
+            var zoomDrag = null;
+            function zoomAt(x) {
+                var r = $("#CsdEvZoom").getBoundingClientRect(), c = ed.ev.zc;
+                return c - EV_ZOOM + Math.max(0, Math.min(1, (x - r.left) / r.width)) * 2 * EV_ZOOM;
+            }
+            function zoomMove(x) {
+                var ev = ed.ev, t = Math.max(0, Math.min(ed.seconds, zoomAt(x)));
+                var no = edgeRefusal(ev.b, ev.edge, t);
+                $("#CsdEvMsg").textContent = no ? "Break " + (ed.breaks.indexOf(ev.b) + 1) + " can't " + edgeName(ev.edge) + " at " + clock(t, true) + ": " + no + "." : "";
+                if (!no) {
+                    ev.b[ev.edge] = t;
+                    renderZoom();
+                }
+            }
+            $("#CsdEvZoom").addEventListener("pointerdown", function (e) {
+                if (!ed || !ed.ev) {
+                    return;
+                }
+                ed.ev.zc = ed.ev.b[ed.ev.edge];
+                zoomDrag = { from: ed.ev.zc };
+                this.setPointerCapture(e.pointerId);
+                e.preventDefault();
+                zoomMove(e.clientX);
+            });
+            $("#CsdEvZoom").addEventListener("pointermove", function (e) {
+                if (zoomDrag) {
+                    zoomMove(e.clientX);
+                }
+            });
+            function endZoom(e) {
+                if (!zoomDrag) {
+                    return;
+                }
+                var ev = ed.ev, b = ev.b, edge = ev.edge, t = b[edge];
+                zoomDrag = null;
+                ev.zc = null;
+                if (e.type !== "pointerup") {
+                    renderEdgeView();
+                    return;
+                }
+                // Onto the frame there: the edge takes that frame's time.
+                goToEdge(t).then(function () {
+                    if (ed.ev === ev && covers(ed.head) && !edgeRefusal(b, edge, ed.head)) {
+                        b[edge] = ed.head;
+                    }
+                    edgeChanged();
+                });
+            }
+            $("#CsdEvZoom").addEventListener("pointerup", endZoom);
+            $("#CsdEvZoom").addEventListener("pointercancel", endZoom);
+
+            ["#CsdEvA", "#CsdEvB", "#CsdEvStrip"].forEach(function (sel) {
+                $(sel).addEventListener("wheel", onWheel, { passive: false });
+            });
+            $("#CsdEvBack").addEventListener("click", closeEdgeView);
+            $("#CsdEvDone").addEventListener("click", closeEdgeView);
+            $("#CsdEvOther").addEventListener("click", function () {
+                switchEdge(ed.ev.edge === "Start" ? "End" : "Start");
+            });
+            $("#CsdEvUndo").addEventListener("click", function () {
+                var ev = ed.ev, was = ev.was[ev.edge], no = edgeRefusal(ev.b, ev.edge, was);
+                if (no) {
+                    $("#CsdEvMsg").textContent = "Can't put it back at " + clock(was, true) + ": " + no + ".";
+                    return;
+                }
+                ev.b[ev.edge] = was;
+                edgeChanged();
+                goToEdge(was);
+            });
+
+            function edgeViewKey(e) {
+                var what = {
+                    ArrowRight: e.ctrlKey ? "key+" : e.shiftKey ? "+1s" : "+1",
+                    ArrowLeft: e.ctrlKey ? "key-" : e.shiftKey ? "-1s" : "-1",
+                    ArrowUp: "key-",
+                    ArrowDown: "key+",
+                    ",": "black-",
+                    ".": "black+"
+                }[e.key];
+                if (what) {
+                    nav(what);
+                    flash($("#CsdEdgeView").querySelector('[data-nav="' + what + '"]'));
+                } else if (e.ctrlKey) {
+                    return;
+                } else if (e.key === "[" || e.key === "{") {
+                    switchEdge("Start");
+                } else if (e.key === "]" || e.key === "}") {
+                    switchEdge("End");
+                } else if (e.key === "Escape") {
+                    closeEdgeView();
+                } else if (!/^[ jklJKL]$/.test(e.key)) {
+                    return;
+                }
+                e.preventDefault();
             }
 
             // ---- Frames ----
@@ -1305,27 +1873,40 @@
                 });
             }
 
+            // Moving a break's end, black frames count as part of the break: it ends on the first frame
+            // after them. Otherwise (and moving a start) it's their first frame.
             function findBlack(forward) {
-                var id = ed.id, from = ed.head;
-                $("#CsdBlack").textContent = "Looking for black frames " + (forward ? "after " : "before ") + clock(from, true) + "…";
-                fetch(ApiClient.getUrl("ComskipSegments/Dashboard/" + id + "/Black", { seconds: from.toFixed(3), forward: forward }), {
-                    headers: { Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"' }
-                }).then(function (r) {
-                    return r.status === 200 ? r.json() : null;
-                }).then(function (run) {
+                var id = ed.id, from = ed.head, out = ed.ev ? $("#CsdEvMsg") : $("#CsdBlack");
+                var toEnd = !!(ed.follow && ed.follow.edge === "End");
+                out.textContent = "Looking for black frames " + (forward ? "after " : "before ") + clock(from, true) + "…";
+                var ask = function (at, again) {
+                    return fetch(ApiClient.getUrl("ComskipSegments/Dashboard/" + id + "/Black", { seconds: at.toFixed(3), forward: forward }), {
+                        headers: { Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"' }
+                    }).then(function (r) {
+                        return r.status === 200 ? r.json() : null;
+                    }).then(function (run) {
+                        // An end already just after black frames: look for the ones before those.
+                        if (run && toEnd && again && Math.abs(run.End - from) < 0.02) {
+                            return ask(run.Start, false);
+                        }
+                        return run;
+                    });
+                };
+                ask(from, true).then(function (run) {
                     if (!ed || ed.id !== id) {
                         return;
                     }
                     if (!run) {
-                        $("#CsdBlack").textContent = "No black frames in the 10 minutes " + (forward ? "after " : "before ") + clock(from, true) + ".";
+                        out.textContent = "No black frames in the 10 minutes " + (forward ? "after " : "before ") + clock(from, true) + ".";
                         return;
                     }
-                    $("#CsdBlack").innerHTML = "Black " + clock(run.Start, true) + " – " + clock(run.End, true) + " (" + (run.End - run.Start).toFixed(2) + " s). "
-                        + '<button type="button" class="csd-btn" data-goto="' + run.Start + '">Its first frame</button> '
-                        + '<button type="button" class="csd-btn" data-goto="' + run.End + '">First frame after it</button>';
-                    goTo(run.Start);
+                    ed.blacks = (ed.blacks || []).filter(function (r) { return Math.abs(r.Start - run.Start) > 0.01; }).concat([run]);
+                    out.innerHTML = "Black " + clock(run.Start, true) + " – " + clock(run.End, true) + " (" + (run.End - run.Start).toFixed(2) + " s). "
+                        + '<button type="button" class="csd-btn sm" data-goto="' + run.Start + '">Its first frame</button> '
+                        + '<button type="button" class="csd-btn sm" data-goto="' + run.End + '">First frame after it</button>';
+                    goToEdge(toEnd ? run.End : run.Start);
                 }).catch(function () {
-                    $("#CsdBlack").textContent = "Couldn't look for black frames.";
+                    out.textContent = "Couldn't look for black frames.";
                 });
             }
 
@@ -1342,10 +1923,17 @@
                     ed.head = l[i].T;
                 }
                 $("#CsdTime").textContent = clock(ed.head, true);
+                applyFollow();
                 var inside = ed.breaks.filter(function (b) { return ed.head >= b.Start && ed.head < b.End; })[0];
-                $("#CsdWhere").classList.toggle("csd-hidden", !inside);
-                $("#CsdWhere").textContent = inside ? "In break " + (ed.breaks.indexOf(inside) + 1) : "";
+                renderWhere(inside);
+                if (inside && ed.breaks.indexOf(inside) !== ed.sel && !ed.ev) {
+                    // The break you're in is the one the panel beside the picture shows.
+                    ed.sel = ed.breaks.indexOf(inside);
+                    renderBreaks();
+                    renderBreakPanel();
+                }
                 renderTimeline();
+                renderEdgeView();
                 var img = $("#CsdImg");
                 clearTimeout(frameTimer);
                 if (i >= 0 && covers(ed.head)) {
@@ -1474,6 +2062,7 @@
                 ahead.classList.toggle("csd-hidden", side !== 1);
                 back.textContent = "◀ You're at " + clock(ed.head, true);
                 ahead.textContent = "You're at " + clock(ed.head, true) + " ▶";
+                renderEdgeView();
             }
 
             function stripHome() {
@@ -1980,7 +2569,17 @@
                     return;
                 }
                 var b = e.target.closest("[data-nav]"), g = e.target.closest("[data-goto]");
-                if (b) {
+                var eg = e.target.closest("[data-edgego]"), en = e.target.closest("[data-enav]"), ev = e.target.closest("[data-edgeview]");
+                if (eg) {
+                    var p = eg.getAttribute("data-edgego").split(":");
+                    stopPlay(true);
+                    goBreakEdge(Number(p[0]), p[1]);
+                } else if (en) {
+                    var q = en.getAttribute("data-enav").split(":");
+                    nudgeEdge(q[0], q[1]);
+                } else if (ev) {
+                    openEdgeView(ev.getAttribute("data-edgeview"));
+                } else if (b) {
                     nav(b.getAttribute("data-nav"));
                 } else if (g) {
                     stopPlay(true);
@@ -2043,7 +2642,14 @@
             // Keys, while the editor shows and nothing is being typed.
             document.addEventListener("keydown", function (e) {
                 if (!ed || $("#CsdEditor").classList.contains("csd-hidden") || !page.offsetParent
-                    || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) {
+                    || e.metaKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) {
+                    return;
+                }
+                if (ed.ev) {
+                    edgeViewKey(e);
+                    return;
+                }
+                if (e.ctrlKey) {
                     return;
                 }
                 var what = {
@@ -2057,6 +2663,8 @@
                 if (what) {
                     nav(what);
                     flash(page.querySelector('[data-nav="' + what + '"]'));
+                } else if ((e.key === "{" || e.key === "}") && ed.breaks[ed.sel]) {
+                    goBreakEdge(ed.sel, e.key === "{" ? "Start" : "End");
                 } else if (e.key === "[") {
                     setEdge("Start");
                     flash($("#CsdSetStart"));
@@ -2397,7 +3005,7 @@
 
             function sizePicture() {
                 var fr = $("#CsdFrame");
-                if (!ed || $("#CsdEditor").classList.contains("csd-hidden")) {
+                if (!ed || ed.ev || $("#CsdEditor").classList.contains("csd-hidden")) {
                     return;
                 }
                 var col = fr.parentNode.clientWidth, w = col;
@@ -2414,6 +3022,7 @@
                     w = SIZES[picSize.mode];
                 }
                 fr.style.width = Math.round(Math.max(240, Math.min(col, w))) + "px";
+                renderWhere(ed.breaks.filter(function (b) { return ed.head >= b.Start && ed.head < b.End; })[0]);
             }
 
             $("#CsdSize").addEventListener("change", function () {
