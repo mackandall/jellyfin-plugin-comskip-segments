@@ -350,6 +350,16 @@
                         <input id="SnapBreakEdgesSeconds" name="SnapBreakEdgesSeconds" type="number" min="0.1" max="2" step="0.1" is="emby-input" />
                     </div>
 
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="BlackKeyframeEdges">Put edges on a black keyframe</label>
+                        <select is="emby-select" id="BlackKeyframeEdges" name="BlackKeyframeEdges" class="emby-select-withcolor emby-select">
+                            <option value="learn">When the show's hand edits do (learned)</option>
+                            <option value="always">Always</option>
+                            <option value="off">Never</option>
+                        </select>
+                        <div class="fieldDescription">When the black frames between show and ad have a keyframe in them, the start goes on the black's first keyframe and the end on its last, instead of the first black frame and the first picture after the black: still on black, and a cut lands exactly there. Learned: once a show has two hand-edited episodes with most of their edges on keyframes (the editor's ‹ Key / Key › buttons put them there).</div>
+                    </div>
+
                     <h3 style="margin-bottom:0.3em;">Break-length check</h3>
                     <div class="fieldDescription">Ads are sold in 15-second units, so a break whose edges are both on the junction is usually a whole number of them long (15.015 s on 29.97 fps TV). Nothing has to be marked by hand: the share of breaks on that grid, against the share a random length would get, says how well the edges are placed. A break with a promo of another length in it is right and still off the grid, so compare the groups, not single breaks.</div>
                     <button id="RulerBtn" type="button" is="emby-button" class="raised block" style="margin-top:0.5em;">
@@ -568,6 +578,7 @@
                 page.querySelector("#GiveBackLetterboxedShow").checked = config.GiveBackLetterboxedShow !== false;
                 page.querySelector("#LetterboxMinSeconds").value = config.LetterboxMinSeconds != null ? config.LetterboxMinSeconds : 120;
                 page.querySelector("#SnapBreakEdgesSeconds").value = config.SnapBreakEdgesSeconds != null ? config.SnapBreakEdgesSeconds : 0.5;
+                page.querySelector("#BlackKeyframeEdges").value = ["learn", "always", "off"].indexOf(config.BlackKeyframeEdges) >= 0 ? config.BlackKeyframeEdges : "learn";
                 page.querySelector("#CleanupWorkFiles").checked = !!config.CleanupWorkFiles;
                 page.querySelector("#PlaceEdlBesideRecording").checked = !!config.PlaceEdlBesideRecording;
                 page.querySelector("#EnableRepeatAdCheck").checked = !!config.EnableRepeatAdCheck;
@@ -972,6 +983,7 @@
                         config.LetterboxMinSeconds = isNaN(lbSeconds) ? 120 : Math.min(600, Math.max(30, lbSeconds));
                         var snapSeconds = parseFloat(page.querySelector("#SnapBreakEdgesSeconds").value);
                         config.SnapBreakEdgesSeconds = isNaN(snapSeconds) ? 0.5 : Math.min(2, Math.max(0.1, snapSeconds));
+                        config.BlackKeyframeEdges = page.querySelector("#BlackKeyframeEdges").value;
                         config.CleanupWorkFiles = page.querySelector("#CleanupWorkFiles").checked;
                         config.PlaceEdlBesideRecording = page.querySelector("#PlaceEdlBesideRecording").checked;
                         config.EnableRepeatAdCheck = page.querySelector("#EnableRepeatAdCheck").checked;

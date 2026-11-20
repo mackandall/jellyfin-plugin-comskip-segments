@@ -207,6 +207,14 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>How far (seconds) an edge may move when <see cref="SnapBreakEdges"/> is on.</summary>
     public double SnapBreakEdgesSeconds { get; set; } = 0.5;
 
+    /// <summary>
+    /// With <see cref="SnapBreakEdges"/>: where in the black frames an edge goes when they have a
+    /// keyframe in them. "learn" (default): on the black's keyframe (start: its first, end: its
+    /// last) for a show whose hand-edited episodes put their edges on keyframes; "always": for
+    /// every recording; "off": the first black frame / the first picture after the black.
+    /// </summary>
+    public string BlackKeyframeEdges { get; set; } = "learn";
+
     /// <summary>Delete Comskip's .txt/.log clutter after a successful parse, keeping only nothing behind.</summary>
     public bool CleanupWorkFiles { get; set; } = true;
 

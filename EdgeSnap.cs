@@ -19,6 +19,12 @@ namespace Jellyfin.Plugin.ComskipSegments;
 /// show has ended), its end to the first picture after it (the show is back), so the black is
 /// part of the break and no show is lost; with no black near, both go to the nearest hard cut.
 /// With neither within <c>window</c> seconds the edge stays where it was.
+/// <para>
+/// On keyframes (the setting "Put edges on a black keyframe", or learned from a show's hand
+/// edits): when the black run has a keyframe in it, a start goes to the run's first keyframe and an
+/// end to its last, so both edges are still on black and a cut lands exactly on them; a run with
+/// no keyframe in it is placed as above.
+/// </para>
 /// </summary>
 /// <remarks>
 /// The nearest cut, not the strongest: cuts inside an ad are more dramatic than the one at its
@@ -57,26 +63,30 @@ public static partial class EdgeSnap
     {
         Unchanged,
         Black,
-        Cut
+        Cut,
+        BlackKeyframe
     }
+
+    /// <summary>How close (seconds) a frame's time and a keyframe's must be to be the same picture.</summary>
+    private const double SamePicture = 0.004;
 
     /// <summary>
     /// The breaks with their edges moved, and how many went where. <paramref name="AdSpans"/>: for
     /// each break whose two edges are both on a junction, the stretch between its black (the ads
     /// alone, which <see cref="BreakRuler"/> measures).
     /// </summary>
-    public sealed record Result(IReadOnlyList<CommercialBreak> Breaks, IReadOnlyList<CommercialBreak> AdSpans, int Black, int Cut, int Unchanged, double MaxMoveSeconds);
+    public sealed record Result(IReadOnlyList<CommercialBreak> Breaks, IReadOnlyList<CommercialBreak> AdSpans, int Black, int Cut, int Unchanged, double MaxMoveSeconds, int OnKeyframe = 0);
 
     [GeneratedRegex(@"^frame:\s*\d+\s+pts:\s*-?\d+\s+pts_time:(-?[0-9.]+)", RegexOptions.Multiline)]
     private static partial Regex FrameLine();
 
     public static async Task<Result> SnapAsync(
-        string ffmpegPath, string ffprobePath, string path, IReadOnlyList<CommercialBreak> breaks, double window, CancellationToken ct)
+        string ffmpegPath, string ffprobePath, string path, IReadOnlyList<CommercialBreak> breaks, double window, CancellationToken ct, bool onKeyframes = false)
     {
         var (start, duration) = await AudioChannelScanner.ProbeFormatTimes(ffprobePath, path, ct).ConfigureAwait(false);
         var result = new List<CommercialBreak>(breaks.Count);
         var ads = new List<CommercialBreak?>(breaks.Count);
-        int black = 0, cut = 0, unchanged = 0, looked = 0;
+        int black = 0, cut = 0, unchanged = 0, looked = 0, keyed = 0;
         double maxMove = 0;
         foreach (var b in breaks.OrderBy(b => b.StartTicks))
         {
@@ -87,14 +97,14 @@ public static partial class EdgeSnap
             double? innerS = null, innerE = null;
             if (s > FileEdgeSeconds && looked++ < MaxEdges)
             {
-                var (t, kind, inner) = await EdgeAsync(ffmpegPath, ffprobePath, path, start, s, window, isStart: true, ct).ConfigureAwait(false);
+                var (t, kind, inner) = await EdgeAsync(ffmpegPath, ffprobePath, path, start, s, window, isStart: true, onKeyframes, ct).ConfigureAwait(false);
                 Count(kind);
                 (newS, innerS) = (t, inner);
             }
 
             if ((duration <= 0 || e < duration - FileEdgeSeconds) && looked++ < MaxEdges)
             {
-                var (t, kind, inner) = await EdgeAsync(ffmpegPath, ffprobePath, path, start, e, window, isStart: false, ct).ConfigureAwait(false);
+                var (t, kind, inner) = await EdgeAsync(ffmpegPath, ffprobePath, path, start, e, window, isStart: false, onKeyframes, ct).ConfigureAwait(false);
                 Count(kind);
                 (newE, innerE) = (t, inner);
             }
@@ -123,13 +133,14 @@ public static partial class EdgeSnap
             }
         }
 
-        return new Result(result, ads.Where(a => a is not null).Select(a => a!.Value).ToList(), black, cut, unchanged, maxMove);
+        return new Result(result, ads.Where(a => a is not null).Select(a => a!.Value).ToList(), black, cut, unchanged, maxMove, keyed);
 
         void Count(Kind k)
         {
             switch (k)
             {
                 case Kind.Black: black++; break;
+                case Kind.BlackKeyframe: black++; keyed++; break;
                 case Kind.Cut: cut++; break;
                 default: unchanged++; break;
             }
@@ -138,7 +149,8 @@ public static partial class EdgeSnap
 
     /// <summary>Where one edge goes, from the pictures around it (kept apart from the decoding for testing).</summary>
     /// <returns>The edge; how it was placed; where the ads begin or end at it (the far side of its black run), null when not on a junction.</returns>
-    internal static (double T, Kind Kind, double? Inner) Place(IReadOnlyList<(double T, double Luma, double Scene)> frames, double t, double window, bool isStart)
+    internal static (double T, Kind Kind, double? Inner) Place(
+        IReadOnlyList<(double T, double Luma, double Scene)> frames, double t, double window, bool isStart, IReadOnlyList<double>? keyframes = null)
     {
         // Black runs: [first black frame, first frame after it). A run cut off by either end of
         // what was decoded has an unknown end on that side and is only used for the other one.
@@ -196,10 +208,22 @@ public static partial class EdgeSnap
             .ToList();
         return cuts.Count > 0 ? (cuts[0].T, Kind.Cut, cuts[0].T) : (t, Kind.Unchanged, null);
 
-        (double, Kind, double?) OnRun((double Start, double End, bool StartKnown, bool EndKnown) r) =>
-            isStart
-                ? (r.Start, Kind.Black, r.EndKnown ? r.End : null)
-                : (r.End, Kind.Black, r.StartKnown ? r.Start : null);
+        (double, Kind, double?) OnRun((double Start, double End, bool StartKnown, bool EndKnown) r)
+        {
+            var inner = isStart ? (r.EndKnown ? r.End : (double?)null) : (r.StartKnown ? r.Start : null);
+            // The black run's pictures are [Start, End): its keyframes, as the frames' own times.
+            var keys = keyframes is null ? new List<double>() : frames
+                .Where(f => f.T >= r.Start - SamePicture && f.T < r.End - SamePicture && f.Luma < BlackLuma
+                    && keyframes.Any(k => Math.Abs(k - f.T) <= SamePicture))
+                .Select(f => f.T)
+                .ToList();
+            if (keys.Count > 0)
+            {
+                return (isStart ? keys[0] : keys[^1], Kind.BlackKeyframe, inner);
+            }
+
+            return (isStart ? r.Start : r.End, Kind.Black, inner);
+        }
     }
 
     /// <summary>The black runs (first black picture, first picture after it) from <paramref name="from"/> to <paramref name="to"/>, by the same test as the edges.</summary>
@@ -229,7 +253,7 @@ public static partial class EdgeSnap
     }
 
     private static async Task<(double T, Kind Kind, double? Inner)> EdgeAsync(
-        string ffmpegPath, string ffprobePath, string path, double fileStart, double t, double window, bool isStart, CancellationToken ct)
+        string ffmpegPath, string ffprobePath, string path, double fileStart, double t, double window, bool isStart, bool onKeyframes, CancellationToken ct)
     {
         try
         {
@@ -238,7 +262,8 @@ public static partial class EdgeSnap
             var reach = Math.Max(BlackReach, window + Margin);
             var (from, to) = (t - reach, t + reach);
             var frames = await DecodeAsync(ffmpegPath, ffprobePath, path, fileStart, from, to, ct).ConfigureAwait(false);
-            return frames.Count < 3 ? (t, Kind.Unchanged, null) : Place(frames, t, window, isStart);
+            var keys = onKeyframes ? await Keyframes.AroundAsync(ffprobePath, path, t, reach, ct).ConfigureAwait(false) : null;
+            return frames.Count < 3 ? (t, Kind.Unchanged, null) : Place(frames, t, window, isStart, keys);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

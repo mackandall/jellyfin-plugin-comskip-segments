@@ -205,7 +205,7 @@ public sealed class DetectionManager : BackgroundService
 
     /// <summary>The breaks with their edges on the junction's picture (see <see cref="EdgeSnap"/>); as they were when that fails.</summary>
     private async Task<(IReadOnlyList<CommercialBreak> Breaks, EdgeSnap.Result? Result)> SnapEdgesAsync(
-        string path, IReadOnlyList<CommercialBreak> breaks, double window, CancellationToken ct)
+        string path, IReadOnlyList<CommercialBreak> breaks, double window, CancellationToken ct, bool onKeyframes = false)
     {
         var encoder = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>();
         if (string.IsNullOrEmpty(encoder?.EncoderPath) || string.IsNullOrEmpty(encoder.ProbePath))
@@ -216,16 +216,100 @@ public sealed class DetectionManager : BackgroundService
         try
         {
             var started = System.Diagnostics.Stopwatch.StartNew();
-            var r = await EdgeSnap.SnapAsync(encoder.EncoderPath, encoder.ProbePath, path, breaks, Math.Clamp(window, 0.1, 2), ct).ConfigureAwait(false);
+            var r = await EdgeSnap.SnapAsync(encoder.EncoderPath, encoder.ProbePath, path, breaks, Math.Clamp(window, 0.1, 2), ct, onKeyframes).ConfigureAwait(false);
             _logger.LogInformation(
-                "Break edges of {Path}: {Black} on black, {Cut} on a cut, {Unchanged} left as found (largest move {Move:F2}s, {Ms} ms)",
-                path, r.Black, r.Cut, r.Unchanged, r.MaxMoveSeconds, started.ElapsedMilliseconds);
+                "Break edges of {Path}: {Black} on black ({Keyed} of them on the black's keyframe), {Cut} on a cut, {Unchanged} left as found (largest move {Move:F2}s, {Ms} ms)",
+                path, r.Black, onKeyframes ? r.OnKeyframe.ToString(System.Globalization.CultureInfo.InvariantCulture) : "keyframes off", r.Cut, r.Unchanged, r.MaxMoveSeconds, started.ElapsedMilliseconds);
             return (r.Breaks, r);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Snapping break edges failed for {Path}; keeping them as they were", path);
             return (breaks, null);
+        }
+    }
+
+    // A hand-edited episode's edges: how many, and how many sit on a keyframe (kept per edit).
+    private readonly ConcurrentDictionary<(Guid Id, DateTime Updated), (int Edges, int OnKeyframe)> _editKeyframes = new();
+
+    /// <summary>The most recent hand-edited episodes of a show looked at for <see cref="EdgesOnKeyframesAsync"/>.</summary>
+    private const int KeyframeHabitEpisodes = 6;
+
+    /// <summary>
+    /// Whether this recording's edges go on the black's keyframe (setting "Put edges on a black
+    /// keyframe"). Learned: the show's hand-edited episodes (at least two, six edges) have at least
+    /// 60% of their edges on a keyframe. By chance that's one edge in 15–60 (a keyframe every
+    /// 0.5–2 s), so it only happens when they were put there on purpose.
+    /// </summary>
+    private async Task<bool> EdgesOnKeyframesAsync(BaseItem item, string? mode, CancellationToken ct)
+    {
+        if (string.Equals(mode, "always", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (!string.Equals(mode ?? "learn", "learn", StringComparison.OrdinalIgnoreCase)
+            || _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.ProbePath is not { Length: > 0 } probe)
+        {
+            return false;
+        }
+
+        try
+        {
+            var key = RepeatAds.RepeatAdService.SeriesKey(item);
+            var edited = _store.All()
+                .Where(kv => kv.Key != item.Id && kv.Value.Source == DetectionRecord.SourceEdited && kv.Value.Breaks.Count > 0)
+                .Select(kv => (kv.Key, kv.Value, Item: _libraryManager.GetItemById(kv.Key)))
+                .Where(x => x.Item is { Path: not null } other && RepeatAds.RepeatAdService.SeriesKey(other) == key && File.Exists(other.Path))
+                .OrderByDescending(x => x.Value.UpdatedUtc)
+                .Take(KeyframeHabitEpisodes)
+                .ToList();
+            int episodes = 0, edges = 0, onKey = 0;
+            foreach (var (id, record, other) in edited)
+            {
+                if (!_editKeyframes.TryGetValue((id, record.UpdatedUtc), out var seen))
+                {
+                    var seconds = (other!.RunTimeTicks ?? 0) / 1e7;
+                    var times = record.Breaks
+                        .SelectMany(b => new[] { b.StartTicks / 1e7, b.EndTicks / 1e7 })
+                        .Where(t => t > 1 && (seconds <= 0 || t < seconds - 1))
+                        .ToList();
+                    var on = 0;
+                    foreach (var t in times)
+                    {
+                        var keys = await Keyframes.AroundAsync(probe, other.Path!, t, 0.6, ct).ConfigureAwait(false);
+                        if (keys.Any(k => Math.Abs(k - t) <= 0.004))
+                        {
+                            on++;
+                        }
+                    }
+
+                    seen = (times.Count, on);
+                    _editKeyframes[(id, record.UpdatedUtc)] = seen;
+                }
+
+                if (seen.Edges > 0)
+                {
+                    episodes++;
+                    edges += seen.Edges;
+                    onKey += seen.OnKeyframe;
+                }
+            }
+
+            var learned = episodes >= 2 && edges >= 6 && onKey >= 0.6 * edges;
+            if (episodes > 0)
+            {
+                _logger.LogInformation(
+                    "Edges on keyframes for {Path}: {OnKey} of {Edges} edges in {Episodes} hand-edited episode(s) of the show are on a keyframe: {Learned}",
+                    item.Path, onKey, edges, episodes, learned ? "edges go on the black's keyframe" : "not learned");
+            }
+
+            return learned;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Couldn't look at the hand-edited episodes' keyframes for {Path}", item.Path);
+            return false;
         }
     }
 
@@ -268,7 +352,7 @@ public sealed class DetectionManager : BackgroundService
     /// The breaks with the recording's early start (see <see cref="LeadIn"/>) marked as a break;
     /// the same list when it didn't start early, its start was trimmed, or its program start is known.
     /// </summary>
-    private async Task<IReadOnlyList<CommercialBreak>> LeadInAsync(BaseItem item, IReadOnlyList<CommercialBreak> breaks, CancellationToken ct)
+    private async Task<IReadOnlyList<CommercialBreak>> LeadInAsync(BaseItem item, IReadOnlyList<CommercialBreak> breaks, CancellationToken ct, bool onKeyframes = false)
     {
         var path = item.Path!;
         if (Editing.TrimBackups.Find(path) is not null || _programStart.HasStart(item.Id)
@@ -290,6 +374,16 @@ public sealed class DetectionManager : BackgroundService
             var (from, to) = LeadIn.Window(leadIn);
             var runs = await EdgeSnap.BlackRunsAsync(encoder.EncoderPath, encoder.ProbePath, path, from, to, ct).ConfigureAwait(false);
             var end = LeadIn.End(runs, leadIn);
+            // Edges on the black's keyframe (see EdgeSnap): the program starts on the last one in it.
+            if (onKeyframes && runs.FirstOrDefault(r => Math.Abs(r.End - end) < 0.005) is { End: > 0 } run)
+            {
+                var keys = await Keyframes.AroundAsync(encoder.ProbePath, path, end, Math.Min(10, end - run.Start + 1), ct).ConfigureAwait(false);
+                if (keys.Where(k => k >= run.Start - 0.004 && k < run.End - 0.004).Cast<double?>().LastOrDefault() is { } key)
+                {
+                    end = key;
+                }
+            }
+
             var result = LeadIn.Apply(breaks, end, out var changed);
             if (changed)
             {
@@ -1324,10 +1418,12 @@ public sealed class DetectionManager : BackgroundService
         }
 
         EdgeSnap.Result? snapped = null;
+        var onKeys = false;
         if (cfg.SnapBreakEdges && breaks.Count > 0)
         {
             job.Stage = "edges";
-            (breaks, snapped) = await SnapEdgesAsync(item.Path, breaks, cfg.SnapBreakEdgesSeconds, ct).ConfigureAwait(false);
+            onKeys = await EdgesOnKeyframesAsync(item, cfg.BlackKeyframeEdges, ct).ConfigureAwait(false);
+            (breaks, snapped) = await SnapEdgesAsync(item.Path, breaks, cfg.SnapBreakEdgesSeconds, ct, onKeys).ConfigureAwait(false);
             job.Stage = "saving";
         }
 
@@ -1343,7 +1439,7 @@ public sealed class DetectionManager : BackgroundService
 
         if (cfg.MarkRecordingLeadIn && !audioTrimApplied)
         {
-            breaks = await LeadInAsync(item, breaks, ct).ConfigureAwait(false);
+            breaks = await LeadInAsync(item, breaks, ct, onKeys).ConfigureAwait(false);
         }
 
         if (cfg.LearnEndCard)
@@ -1393,7 +1489,8 @@ public sealed class DetectionManager : BackgroundService
                 letterboxed > 0 ? $"{Clock(letterboxed)} of letterboxed show given back" : null,
                 repeatAdded > 0 ? $"{Clock(repeatAdded)} of ads added" + (learnedFrom > 0 ? "" : " (heard in other shows)") : null,
                 repeatRemoved > 0 ? $"{Clock(repeatRemoved)} given back to the show" : null,
-                learnedFrom > 0 && (repeatAdded > 0 || repeatRemoved > 0) ? $"learned from {learnedFrom} hand-edited episode{(learnedFrom == 1 ? "" : "s")}" : null
+                learnedFrom > 0 && (repeatAdded > 0 || repeatRemoved > 0) ? $"learned from {learnedFrom} hand-edited episode{(learnedFrom == 1 ? "" : "s")}" : null,
+                snapped is { OnKeyframe: > 0 } k ? $"{k.OnKeyframe} edge{(k.OnKeyframe == 1 ? "" : "s")} on a black keyframe" : null
             }.Where(x => x is not null)) is { Length: > 0 } detail ? detail : null,
             ranComskip && job.ComskipStartedUtc is not null);
     }
