@@ -74,7 +74,8 @@ public static class BreakLearning
         EditedEvidence? edited,
         double recordingSeconds,
         out double addedSeconds,
-        out double removedSeconds)
+        out double removedSeconds,
+        List<string>? trace = null)
     {
         var original = Normalize(breaks.Select(b => new Span(b.StartTicks / (double)TicksPerSecond, b.EndTicks / (double)TicksPerSecond)));
         var evidence = Normalize(crossRepeats.Concat(edited?.LearnedAds ?? Array.Empty<Span>()));
@@ -83,6 +84,8 @@ public static class BreakLearning
         var spans = Normalize(original.Concat(Snap(pieces, evidence)));
         var merged = BreakMerge.Merge(ToBreaks(spans), evidence.Select(s => (s.Start, s.End)), out _);
         spans = Normalize(merged.Select(b => new Span(b.StartTicks / (double)TicksPerSecond, b.EndTicks / (double)TicksPerSecond)));
+        Trace("comskip", original);
+        Trace("repeats", spans);
 
         if (edited is not null)
         {
@@ -103,6 +106,7 @@ public static class BreakLearning
             //    and where it was also heard as an ad (a match running from an ad's end into the show).
             var show = Subtract(Subtract(Normalize(edited.LearnedShow), padding), evidence);
             spans = DropShort(Subtract(spans, show));
+            Trace("kept-show", spans);
 
             // 4. Show-length check.
             if (edited.ShowSeconds is { } expected)
@@ -148,20 +152,31 @@ public static class BreakLearning
                 }
             }
 
+            Trace("show-length", spans);
+
             // 5. Padding.
             spans = Normalize(spans.Concat(padding));
+            Trace("padding", spans);
 
             // 6. The show's break pattern.
             if (edited.Pattern is { Count: > 0 } pattern && pieces is { Count: > 0 })
             {
+                trace?.Add("pattern: " + string.Join(", ", pattern.Select(j => FormattableString.Invariant($"{Clock(j.StartMin)}–{Clock(j.StartMax)} ({j.LengthMin:0}–{j.LengthMax:0}s)"))));
                 spans = FitPattern(spans, pieces, evidence, pattern, recordingSeconds, edited.Anchors);
+                Trace("pattern-fit", spans);
             }
         }
 
         addedSeconds = Covered(Subtract(spans, original));
+
+        void Trace(string step, IEnumerable<Span> list) =>
+            trace?.Add(step + ": " + string.Join(", ", list.Select(x => Clock(x.Start) + "–" + Clock(x.End))));
+
         removedSeconds = Covered(Subtract(original, spans));
         return ToBreaks(spans);
     }
+
+    private static string Clock(double t) => FormattableString.Invariant($"{(int)(t / 60)}:{t % 60:00.0}");
 
     /// <summary>How far past the edited episodes' earliest and latest start a break is looked for, widening when nothing fits.</summary>
     private static readonly double[] PatternSlack = { 30, 60, 120 };
@@ -257,6 +272,25 @@ public static class BreakLearning
                 if (best is not null)
                 {
                     break;
+                }
+            }
+
+            // Don't skip a break: one already found between the last placed break and this one, that
+            // would also do for this break of the pattern (looked for as widely as above), is it. The
+            // nearest-first search otherwise takes the next break along, and the one skipped goes.
+            if (best is { } chosen && !j.AtStart && !j.AtEnd)
+            {
+                var skipped = spans
+                    .Where(x => x.Start >= after - 0.5 && x.End <= chosen.Start + 0.5
+                        && x.Start >= j.StartMin - PatternSlack[^1] && x.Start <= j.StartMax + PatternSlack[^1]
+                        && x.Length >= j.LengthMin - PatternLengthSlack && x.Length <= j.LengthMax + PatternLengthSlack
+                        && Cover(x, ads) >= PatternMinCover)
+                    .OrderBy(x => x.Start)
+                    .Cast<Span?>()
+                    .FirstOrDefault();
+                if (skipped is { } earlier)
+                {
+                    best = earlier;
                 }
             }
 

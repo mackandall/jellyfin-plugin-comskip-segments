@@ -96,6 +96,64 @@ public static class EdgeAnchors
         return result;
     }
 
+    /// <summary>How far past a break's end the sound that ends your breaks is listened for.</summary>
+    public const double CountdownReach = 75;
+
+    /// <summary>
+    /// Runs a break on to the sound that ends your breaks (the channel's "we'll be back" countdown),
+    /// when it's heard within <see cref="CountdownReach"/> seconds after the break's end, wherever
+    /// the break is: promos for other shows between the ads and the countdown (No Guns Life E02,
+    /// 20:33 to 20:45) end up in the break. <paramref name="clips"/>: the last seconds of each break
+    /// of your edited episodes (but their last, which runs to the end). Two of them must agree
+    /// to within a second. Never shortens a break or runs into the next one.
+    /// </summary>
+    public static List<Span> ExtendToCountdown(uint[] fp, IReadOnlyList<Span> breaks, IReadOnlyList<uint[]> clips, out int extended)
+    {
+        extended = 0;
+        var result = breaks.ToList();
+        if (clips.Count < 2)
+        {
+            return result;
+        }
+
+        var item = ClipItems * RepeatMatcher.Step;
+        var total = fp.Length * RepeatMatcher.Step;
+        for (var i = 0; i < result.Count; i++)
+        {
+            var b = result[i];
+            if (b.End > total - 5)
+            {
+                continue;
+            }
+
+            var limit = Math.Min(b.End + CountdownReach, i + 1 < result.Count ? result[i + 1].Start : total);
+            var found = clips
+                .Select(c => Best(c, fp, b.End - item - 1, limit - item, MaxMeanBitsInside))
+                .Where(x => x is not null)
+                .Select(x => x!.Value + item)
+                .OrderBy(x => x)
+                .ToList();
+            // The latest spot two clips agree on: a countdown heard twice runs the break to the second.
+            double? end = null;
+            for (var a = 0; a < found.Count; a++)
+            {
+                var near = found.Where(f => Math.Abs(f - found[a]) <= AgreeSeconds).ToList();
+                if (near.Count >= 2)
+                {
+                    end = near.Average();
+                }
+            }
+
+            if (end is { } e && e > b.End + AgreeSeconds && e <= limit + 0.5)
+            {
+                result[i] = new Span(b.Start, e);
+                extended++;
+            }
+        }
+
+        return result;
+    }
+
     /// <summary>Each clip's best spot in [from, to] (plus <paramref name="offset"/>); their agreed edge, if most were heard and agree.</summary>
     private static double? Agree(IEnumerable<uint[]?> clips, uint[] fp, double from, double to, double offset, double maxMeanBits)
     {

@@ -114,7 +114,8 @@ public sealed class DashboardController : ControllerBase
         CutResult? LastCut,
         string? CutRefusal,
         CutSettings Settings,
-        IReadOnlyList<Join>? Joins = null);
+        IReadOnlyList<Join>? Joins = null,
+        int? OtherHandEdits = null);
 
     /// <summary>
     /// Where a cut recording's kept parts meet, in seconds of the cut file, and how much was
@@ -192,7 +193,20 @@ public sealed class DashboardController : ControllerBase
             _cutter.LastResult(itemId),
             _cutter.Refusal(item),
             Settings(),
-            hasCut ? JoinsOf(cutRecord) : null));
+            hasCut ? JoinsOf(cutRecord) : null,
+            record?.Source == DetectionRecord.SourceEdited ? OtherHandEdits(item) : null));
+    }
+
+    /// <summary>
+    /// The show's other hand-edited episodes: what a new scan learns from (a re-scan of this one
+    /// replaces its edit, so it stops teaching), for the editor's warning before one.
+    /// </summary>
+    private int OtherHandEdits(BaseItem item)
+    {
+        var key = RepeatAds.RepeatAdService.SeriesKey(item);
+        return _detections.All()
+            .Where(kv => kv.Key != item.Id && kv.Value.Source == DetectionRecord.SourceEdited && kv.Value.Breaks.Count > 0)
+            .Count(kv => _libraryManager.GetItemById(kv.Key) is { } other && RepeatAds.RepeatAdService.SeriesKey(other) == key);
     }
 
     private static List<Join> JoinsOf(CommercialCutRecord record)

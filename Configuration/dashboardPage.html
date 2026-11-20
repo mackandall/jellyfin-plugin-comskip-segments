@@ -2935,8 +2935,21 @@
                 show(false);
             });
 
+            // Learning reads the show's hand-edited episodes as they are now: nothing is kept apart, so a
+            // re-scan of one takes its edit out of what the show learns from.
+            function rescanWarning(others) {
+                var msg = "Re-running Comskip replaces the breaks you edited, for good.\n\n"
+                    + "Scans learn this show's breaks only from the episodes that are hand-edited right now; this one stops teaching.";
+                if (others != null) {
+                    msg += " The show would have " + (others === 0 ? "none" : others) + " left"
+                        + (others < 2 ? ", so new scans would learn nothing from your edits"
+                            : others < 3 ? ", too few for its break pattern (that needs 3)" : "") + ".";
+                }
+                return msg + "\n\nTo see what a scan does now, re-scan an episode you haven't edited instead.\n\nReplace this edit?";
+            }
+
             $("#CsdRescan").addEventListener("click", function () {
-                if (ed.d.Row.Source === "edited" && !window.confirm("Re-running Comskip replaces the breaks you edited. Go ahead?")) {
+                if (ed.d.Row.Source === "edited" && !window.confirm(rescanWarning(ed.d.OtherHandEdits))) {
                     return;
                 }
                 api("POST", "ComskipSegments/Detect/" + ed.id + "?force=true").then(function (r) {

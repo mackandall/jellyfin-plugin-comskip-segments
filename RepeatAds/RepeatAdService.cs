@@ -288,7 +288,9 @@ public sealed class RepeatAdService
                 pattern is null ? null : Anchors(fp, pattern.Value));
         }
 
-        var combined = BreakLearning.Combine(breaks, pieces, mine.Select(m => new Span(m.Item1, m.Item2)).ToList(), evidence, length, out var added, out var removed);
+        var steps = new List<string>();
+        var combined = BreakLearning.Combine(breaks, pieces, mine.Select(m => new Span(m.Item1, m.Item2)).ToList(), evidence, length, out var added, out var removed, steps);
+        _logger.LogInformation("Repeat-ad steps for {Path}: {Steps}", item.Path, string.Join(" | ", steps));
         if (added < 1 && removed < 1)
         {
             combined = breaks.ToList();
@@ -299,6 +301,30 @@ public sealed class RepeatAdService
             _logger.LogInformation(
                 "Repeat-ad check on {Path}: {Added:0} s of ads added, {Removed:0} s given back to the show ({Before} → {After} break(s); {Edited} hand-edited episode(s) of the show learned from)",
                 item.Path, added, removed, breaks.Count, combined.Count, evidence?.Episodes ?? 0);
+        }
+
+        // The sound that ends your breaks, heard just after one: the break runs on to it.
+        if (edited.Count >= 2 && combined.Count > 0)
+        {
+            var countdown = edited.Values
+                .Select(e => _store.Load(e.Id) is { } theirFp
+                    ? EdgeAnchors.Clips(theirFp, e.Breaks).Take(e.Breaks.Count - 1).Select(c => c.BreakLast)
+                    : Enumerable.Empty<uint[]?>())
+                .SelectMany(c => c)
+                .Where(c => c is not null)
+                .Select(c => c!)
+                .ToList();
+            var spans = combined.Select(b => new Span(b.StartTicks / 1e7, b.EndTicks / 1e7)).ToList();
+            var longer = EdgeAnchors.ExtendToCountdown(fp, spans, countdown, out var extended);
+            if (extended > 0)
+            {
+                var more = BreakLearning.Covered(longer) - BreakLearning.Covered(spans);
+                added += more;
+                _logger.LogInformation(
+                    "Break-ending countdown in {Path}: {Count} break(s) run on to it ({More:0.0} s more), from {Clips} clips of your edited breaks' last seconds",
+                    item.Path, extended, more, countdown.Count);
+                combined = longer.Select(x => new CommercialBreak((long)Math.Round(x.Start * 1e7), (long)Math.Round(x.End * 1e7))).ToList();
+            }
         }
 
         if (cfg.RepeatAdUpdateOlder && theirs.Count > 0)
