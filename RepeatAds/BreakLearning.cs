@@ -175,8 +175,13 @@ public static class BreakLearning
     /// <summary>Score lost per second a break is longer or shorter than the edited episodes' usual.</summary>
     internal static double PatternLengthPull = 1;
 
-    /// <summary>At the widest search, a break must be at least this much ad already (Comskip's, heard elsewhere, or found above).</summary>
-    private const double PatternWideCover = 0.5;
+    /// <summary>
+    /// A placed break must be at least this much ad already (Comskip's, heard elsewhere, or found
+    /// above), at every search width: a show whose breaks move around (No Guns Life: the third break
+    /// anywhere from 8:56 to 15:57) otherwise gets a break of pure show where its episodes usually
+    /// have one.
+    /// </summary>
+    private const double PatternMinCover = 0.5;
 
     /// <summary>
     /// Fits the show's break pattern (see <see cref="Junction"/>): for each of its breaks, the start
@@ -198,6 +203,9 @@ public static class BreakLearning
             .Where(t => t >= 0 && t <= recordingSeconds + 0.5).Distinct().OrderBy(t => t).ToArray();
         var result = new List<Span>();
         var unplaced = new List<Span>();
+        // The pattern's breaks come in order: each is looked for after the last one placed, so two
+        // can't take the same break (and leave the next one unclaimed, to be dropped).
+        var after = double.MinValue;
         for (var k = 0; k < pattern.Count; k++)
         {
             var j = pattern[k];
@@ -212,7 +220,7 @@ public static class BreakLearning
             {
                 foreach (var start in starts)
                 {
-                    if (j.AtStart ? start > 0.5 : start < j.StartMin - slack || start > j.StartMax + slack)
+                    if (j.AtStart ? start > 0.5 : start < j.StartMin - slack || start > j.StartMax + slack || start < after - 0.5)
                     {
                         continue;
                     }
@@ -227,7 +235,7 @@ public static class BreakLearning
 
                         var span = new Span(start, j.AtEnd ? recordingSeconds : end);
                         var cover = Cover(span, ads);
-                        if (slack == PatternSlack[^1] && cover < PatternWideCover)
+                        if (cover < PatternMinCover)
                         {
                             continue;
                         }
@@ -255,6 +263,7 @@ public static class BreakLearning
             if (best is { } b)
             {
                 result.Add(b);
+                after = b.End;
             }
             else
             {
