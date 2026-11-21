@@ -33,6 +33,12 @@ public static class ScanReason
     /// ahead of them (a new recording never waits hours behind the batch).
     /// </summary>
     public const string Rescan = "rescan";
+
+    /// <summary>Lessons tab's "Scan the rest of the show": like <see cref="Rescan"/>, behind every other scan.</summary>
+    public const string FromLessons = "lessons";
+
+    /// <summary>Batches that wait behind every other scan.</summary>
+    public static bool IsBatch(string reason) => reason is Rescan or FromLessons;
 }
 
 /// <param name="Force">Scans even outside the automatic scope (a manual scan).</param>
@@ -140,7 +146,7 @@ public sealed class ScanQueue
             {
                 _waiting.Insert(0, entry);
             }
-            else if (entry.Reason != ScanReason.Rescan && _waiting.FindIndex(e => e.Reason == ScanReason.Rescan) is var batch and >= 0)
+            else if (!ScanReason.IsBatch(entry.Reason) && _waiting.FindIndex(e => ScanReason.IsBatch(e.Reason)) is var batch and >= 0)
             {
                 _waiting.Insert(batch, entry);
             }

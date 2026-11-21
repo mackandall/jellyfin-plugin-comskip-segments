@@ -44,6 +44,7 @@ public sealed class DashboardController : ControllerBase
     private readonly CutTracker _cuts;
     private readonly TrimBackups _backups;
     private readonly IServiceProvider _serviceProvider;
+    private readonly RepeatAds.RepeatAdService _repeats;
 
     public DashboardController(
         ILogger<DashboardController> logger,
@@ -55,7 +56,8 @@ public sealed class DashboardController : ControllerBase
         CommercialCutService cutter,
         CutTracker cuts,
         TrimBackups backups,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        RepeatAds.RepeatAdService repeats)
     {
         _logger = logger;
         _libraryManager = libraryManager;
@@ -67,6 +69,7 @@ public sealed class DashboardController : ControllerBase
         _cuts = cuts;
         _backups = backups;
         _serviceProvider = serviceProvider;
+        _repeats = repeats;
     }
 
     /// <summary>A break, in seconds from the start of the file.</summary>
@@ -115,7 +118,13 @@ public sealed class DashboardController : ControllerBase
         string? CutRefusal,
         CutSettings Settings,
         IReadOnlyList<Join>? Joins = null,
-        int? OtherHandEdits = null);
+        int? OtherHandEdits = null,
+        LessonInfo? Lesson = null);
+
+    /// <summary>The recording's lesson (see <see cref="RepeatAds.Lesson"/>), for the editor.</summary>
+    /// <param name="Restorable">Its breaks can be put back on the recording (still the file they were saved on).</param>
+    /// <param name="Others">The show's other teaching lessons.</param>
+    public sealed record LessonInfo(DateTime SavedUtc, bool Teaching, int Breaks, bool Restorable, int Others);
 
     /// <summary>
     /// Where a cut recording's kept parts meet, in seconds of the cut file, and how much was
@@ -194,8 +203,21 @@ public sealed class DashboardController : ControllerBase
             _cutter.Refusal(item),
             Settings(),
             hasCut ? JoinsOf(cutRecord) : null,
-            record?.Source == DetectionRecord.SourceEdited ? OtherHandEdits(item) : null));
+            record?.Source == DetectionRecord.SourceEdited ? OtherHandEdits(item) : null,
+            LessonOf(item)));
     }
+
+    private LessonInfo? LessonOf(BaseItem item)
+    {
+        _repeats.MigrateLessons();
+        return _repeats.Lessons.TryGet(item.Id, out var lesson)
+            ? new LessonInfo(lesson.SavedUtc, lesson.Teaching, lesson.Breaks.Count, Restorable(item.Id, lesson), OtherHandEdits(item))
+            : null;
+    }
+
+    /// <summary>Its breaks can go back on the recording: the file is still the one they were saved on.</summary>
+    private bool Restorable(Guid id, RepeatAds.Lesson lesson) =>
+        _libraryManager.GetItemById(id) is { Path: { } path } && _repeats.LessonFile(id, lesson) == path;
 
     /// <summary>
     /// The show's other hand-edited episodes: what a new scan learns from (a re-scan of this one
@@ -203,10 +225,8 @@ public sealed class DashboardController : ControllerBase
     /// </summary>
     private int OtherHandEdits(BaseItem item)
     {
-        var key = RepeatAds.RepeatAdService.SeriesKey(item);
-        return _detections.All()
-            .Where(kv => kv.Key != item.Id && kv.Value.Source == DetectionRecord.SourceEdited && kv.Value.Breaks.Count > 0)
-            .Count(kv => _libraryManager.GetItemById(kv.Key) is { } other && RepeatAds.RepeatAdService.SeriesKey(other) == key);
+        _repeats.MigrateLessons();
+        return _repeats.Lessons.OfShow(RepeatAds.RepeatAdService.SeriesKey(item)).Count(x => x.Id != item.Id);
     }
 
     private static List<Join> JoinsOf(CommercialCutRecord record)
@@ -249,7 +269,179 @@ public sealed class DashboardController : ControllerBase
         var breaks = (request.Breaks ?? Array.Empty<Span>())
             .Select(b => new CommercialBreak((long)(b.Start * 1e7), (long)(b.End * 1e7)))
             .ToList();
-        return Ok(await _cutter.SaveBreaksAsync(item, breaks, request.WriteEdl, ct).ConfigureAwait(false));
+        return Ok(await SaveAsLessonAsync(item, breaks, request.WriteEdl, ct).ConfigureAwait(false));
+    }
+
+    /// <summary>Saves hand-set breaks, and keeps them as the show's lesson.</summary>
+    private async Task<EditResult> SaveAsLessonAsync(BaseItem item, IReadOnlyList<CommercialBreak> breaks, bool writeEdl, CancellationToken ct)
+    {
+        _repeats.MigrateLessons();
+        _detections.TryGet(item.Id, out var before);
+        var result = await _cutter.SaveBreaksAsync(item, breaks, writeEdl, ct).ConfigureAwait(false);
+        if (result.Ok)
+        {
+            _repeats.RememberEdit(item, breaks, before);
+            var count = _repeats.Lessons.OfShow(RepeatAds.RepeatAdService.SeriesKey(item)).Count;
+            result = result with { Message = result.Message + $" Kept as a lesson: {RepeatAds.RepeatAdService.ShowName(item)} has {count} teaching." };
+        }
+
+        return result;
+    }
+
+    // ---- Lessons: hand edits kept for their show to learn from ----
+
+    /// <param name="Recording">What the recording has now: edit (your breaks), scan (a later scan's),
+    /// cut (the commercials were cut out), gone (deleted).</param>
+    /// <param name="Sound">Its sound fingerprint is kept, so it teaches the repeat-ad and pattern learning.</param>
+    public sealed record LessonRow(
+        Guid Id, string Name, DateTime SavedUtc, double Seconds, IReadOnlyList<Span> Breaks, bool Teaching, string Origin,
+        string Recording, bool Sound, bool Restorable, IReadOnlyList<Span>? ScanBefore);
+
+    public sealed record LessonShow(string Key, string Show, int Teaching, DateTime Newest, IReadOnlyList<LessonRow> Lessons);
+
+    public sealed record TeachingRequest(bool Teaching);
+
+    /// <summary>Every show's lessons, newest first.</summary>
+    [HttpGet("Lessons")]
+    public ActionResult<IReadOnlyList<LessonShow>> Lessons()
+    {
+        _repeats.MigrateLessons();
+        static List<Span> Spans(IEnumerable<CommercialBreak> b) => b.Select(x => new Span(x.StartTicks / 1e7, x.EndTicks / 1e7)).ToList();
+        var rows = _repeats.Lessons.All().Select(kv =>
+        {
+            var (id, l) = (kv.Key, kv.Value);
+            var item = _libraryManager.GetItemById(id);
+            var now = item is null ? "gone"
+                : _detections.TryGet(id, out var r) ? r.Source switch
+                {
+                    DetectionRecord.SourceEdited => "edit",
+                    DetectionRecord.SourceCut => "cut",
+                    _ => "scan"
+                }
+                : "scan";
+            var sound = _repeats.Store.TryGetEntry(id, out var e)
+                && (l.FileLength is null || (e.Length == l.FileLength && e.FileTimeUtc == l.FileTimeUtc));
+            return (l.SeriesKey, l.Show, Row: new LessonRow(
+                id, l.Name, l.SavedUtc, l.Seconds, Spans(l.Breaks), l.Teaching, l.Origin, now, sound,
+                item is not null && Restorable(id, l), l.ScanBefore is null ? null : Spans(l.ScanBefore)));
+        });
+        return Ok(rows
+            .GroupBy(x => x.SeriesKey)
+            .Select(g => new LessonShow(
+                g.Key,
+                g.OrderByDescending(x => x.Row.SavedUtc).First().Show,
+                g.Count(x => x.Row.Teaching),
+                g.Max(x => x.Row.SavedUtc),
+                g.Select(x => x.Row).OrderByDescending(x => x.SavedUtc).ToList()))
+            .OrderByDescending(s => s.Newest)
+            .ToList());
+    }
+
+    /// <summary>What "Scan the rest of the show" would do: the show's episodes, and why some are left alone.</summary>
+    /// <param name="ToScan">Every episode it would scan.</param>
+    /// <param name="Older">Of those, the ones not scanned since the show's newest lesson (or never).</param>
+    /// <param name="Lessons">Left alone: your lessons.</param>
+    /// <param name="Cut">Left alone: commercials cut out.</param>
+    /// <param name="Kept">Left alone: breaks you removed (cleared) or another program's .edl.</param>
+    /// <param name="Busy">Left alone for now: being recorded, scanned or cut.</param>
+    public sealed record RestPlan(int Episodes, int ToScan, int Older, int Lessons, int Cut, int Kept, int Busy, int Queued = 0);
+
+    public sealed record RestRequest(string Key, bool OnlyOlder);
+
+    private (RestPlan Plan, List<BaseItem> All, List<BaseItem> Older) PlanRest(string key)
+    {
+        _repeats.MigrateLessons();
+        var teaching = _repeats.Lessons.OfShow(key);
+        var newest = teaching.Count > 0 ? teaching.Max(x => x.Lesson.SavedUtc) : DateTime.MaxValue;
+        var episodes = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Episode },
+                Recursive = true,
+                IsVirtualItem = false
+            })
+            .Where(i => i.Path is not null && RepeatAds.RepeatAdService.SeriesKey(i) == key && System.IO.File.Exists(i.Path))
+            .ToList();
+        int lessons = 0, cut = 0, kept = 0, busy = 0;
+        var all = new List<BaseItem>();
+        var older = new List<BaseItem>();
+        foreach (var e in episodes)
+        {
+            _detections.TryGet(e.Id, out var r);
+            if (_repeats.Lessons.Has(e.Id) || r?.Source == DetectionRecord.SourceEdited)
+            {
+                lessons++;
+            }
+            else if (r?.Source == DetectionRecord.SourceCut)
+            {
+                cut++;
+            }
+            else if (r?.Source is DetectionRecord.SourceCleared or DetectionRecord.SourceEdl)
+            {
+                kept++;
+            }
+            else if (_manager.IsInFlight(e.Id) || _cuts.IsBusy(e.Id) || _manager.IsRecording(e.Path!))
+            {
+                busy++;
+            }
+            else
+            {
+                all.Add(e);
+                if (r is null || r.UpdatedUtc < newest)
+                {
+                    older.Add(e);
+                }
+            }
+        }
+
+        return (new RestPlan(episodes.Count, all.Count, older.Count, lessons, cut, kept, busy), all, older);
+    }
+
+    /// <summary>What "Scan the rest of the show" would scan.</summary>
+    [HttpGet("Lessons/Rest")]
+    public ActionResult<RestPlan> RestOfShow([FromQuery] string key) => Ok(PlanRest(key).Plan);
+
+    /// <summary>Queues the show's episodes that are still a scan's, behind every other scan, to learn from its lessons.</summary>
+    [HttpPost("Lessons/Rest")]
+    public ActionResult<RestPlan> ScanRestOfShow([FromBody] RestRequest request)
+    {
+        var (plan, all, older) = PlanRest(request.Key);
+        var queued = 0;
+        foreach (var e in (request.OnlyOlder ? older : all).OrderBy(e => (e as Episode)?.ParentIndexNumber).ThenBy(e => (e as Episode)?.IndexNumber))
+        {
+            if (_manager.Enqueue(e.Id, force: true, ScanReason.FromLessons) == DetectionManager.EnqueueResult.Queued)
+            {
+                queued++;
+            }
+        }
+
+        _logger.LogInformation("Scan the rest of the show {Key}: {Queued} episode(s) queued from its lessons", request.Key, queued);
+        return Ok(plan with { Queued = queued });
+    }
+
+    /// <summary>A lesson teaches, or is kept without teaching.</summary>
+    [HttpPut("Lessons/{itemId}/Teaching")]
+    public ActionResult SetTeaching([FromRoute] Guid itemId, [FromBody] TeachingRequest request) =>
+        _repeats.Lessons.SetTeaching(itemId, request.Teaching) ? NoContent() : NotFound();
+
+    /// <summary>Forgets a lesson (the recording's breaks stay as they are).</summary>
+    [HttpDelete("Lessons/{itemId}")]
+    public ActionResult Forget([FromRoute] Guid itemId) => _repeats.Lessons.Remove(itemId) ? NoContent() : NotFound();
+
+    /// <summary>Puts the lesson's breaks back on the recording (after a re-scan replaced them).</summary>
+    [HttpPost("Lessons/{itemId}/Restore")]
+    public async Task<ActionResult<EditResult>> Restore([FromRoute] Guid itemId, CancellationToken ct)
+    {
+        if (_libraryManager.GetItemById(itemId) is not BaseItem item || !_repeats.Lessons.TryGet(itemId, out var lesson))
+        {
+            return NotFound();
+        }
+
+        if (!Restorable(itemId, lesson))
+        {
+            return Ok(new EditResult(false, "The recording isn't the file these breaks were saved on any more (it was cut or replaced)."));
+        }
+
+        return Ok(await SaveAsLessonAsync(item, lesson.Breaks, Settings().WriteEdl, ct).ConfigureAwait(false));
     }
 
     /// <summary>Starts cutting the commercials out (follow it in ComskipSegments/Cuts).</summary>

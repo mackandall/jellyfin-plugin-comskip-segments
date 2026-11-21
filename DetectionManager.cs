@@ -256,28 +256,29 @@ public sealed class DetectionManager : BackgroundService
 
         try
         {
+            // The show's teaching lessons whose file is still there (the keyframes are looked up in it).
             var key = RepeatAds.RepeatAdService.SeriesKey(item);
-            var edited = _store.All()
-                .Where(kv => kv.Key != item.Id && kv.Value.Source == DetectionRecord.SourceEdited && kv.Value.Breaks.Count > 0)
-                .Select(kv => (kv.Key, kv.Value, Item: _libraryManager.GetItemById(kv.Key)))
-                .Where(x => x.Item is { Path: not null } other && RepeatAds.RepeatAdService.SeriesKey(other) == key && File.Exists(other.Path))
-                .OrderByDescending(x => x.Value.UpdatedUtc)
+            _repeats.MigrateLessons();
+            var edited = _repeats.Lessons.OfShow(key)
+                .Where(x => x.Id != item.Id && x.Lesson.Breaks.Count > 0)
+                .Select(x => (x.Id, x.Lesson, File: _repeats.LessonFile(x.Id, x.Lesson)))
+                .Where(x => x.File is not null)
                 .Take(KeyframeHabitEpisodes)
                 .ToList();
             int episodes = 0, edges = 0, onKey = 0;
-            foreach (var (id, record, other) in edited)
+            foreach (var (id, lesson, file) in edited)
             {
-                if (!_editKeyframes.TryGetValue((id, record.UpdatedUtc), out var seen))
+                if (!_editKeyframes.TryGetValue((id, lesson.SavedUtc), out var seen))
                 {
-                    var seconds = (other!.RunTimeTicks ?? 0) / 1e7;
-                    var times = record.Breaks
+                    var seconds = lesson.Seconds;
+                    var times = lesson.Breaks
                         .SelectMany(b => new[] { b.StartTicks / 1e7, b.EndTicks / 1e7 })
                         .Where(t => t > 1 && (seconds <= 0 || t < seconds - 1))
                         .ToList();
                     var on = 0;
                     foreach (var t in times)
                     {
-                        var keys = await Keyframes.AroundAsync(probe, other.Path!, t, 0.6, ct).ConfigureAwait(false);
+                        var keys = await Keyframes.AroundAsync(probe, file!, t, 0.6, ct).ConfigureAwait(false);
                         if (keys.Any(k => Math.Abs(k - t) <= 0.004))
                         {
                             on++;
@@ -285,7 +286,7 @@ public sealed class DetectionManager : BackgroundService
                     }
 
                     seen = (times.Count, on);
-                    _editKeyframes[(id, record.UpdatedUtc)] = seen;
+                    _editKeyframes[(id, lesson.SavedUtc)] = seen;
                 }
 
                 if (seen.Edges > 0)
@@ -300,7 +301,7 @@ public sealed class DetectionManager : BackgroundService
             if (episodes > 0)
             {
                 _logger.LogInformation(
-                    "Edges on keyframes for {Path}: {OnKey} of {Edges} edges in {Episodes} hand-edited episode(s) of the show are on a keyframe: {Learned}",
+                    "Edges on keyframes for {Path}: {OnKey} of {Edges} edges in {Episodes} lesson(s) of the show are on a keyframe: {Learned}",
                     item.Path, onKey, edges, episodes, learned ? "edges go on the black's keyframe" : "not learned");
             }
 
@@ -1203,6 +1204,16 @@ public sealed class DetectionManager : BackgroundService
             return Done(job, "skipped", 0, "Its result changed since it was queued", false);
         }
 
+        // "Scan the rest of the show" only while the episode is still a scan's: edited (a lesson),
+        // cut, cleared or another program's breaks since it was queued, it's left as it is.
+        if (job.Entry.Reason == ScanReason.FromLessons
+            && (_repeats.Lessons.Has(itemId)
+                || (before?.Source is DetectionRecord.SourceEdited or DetectionRecord.SourceCut or DetectionRecord.SourceCleared or DetectionRecord.SourceEdl)))
+        {
+            _logger.LogInformation("Scan from lessons skipped for {Path}: it was edited, cut or cleared since it was queued", item.Path);
+            return Done(job, "skipped", 0, "Edited, cut or cleared since it was queued", false);
+        }
+
         // Audio-format trim runs BEFORE Comskip, and only as part of the automatic
         // pipeline here (the manual item-menu/config-page path calls AudioTrimService
         // directly). Running it first means Comskip always scans the FINAL file, so the
@@ -1527,6 +1538,9 @@ public sealed class DetectionManager : BackgroundService
     /// Jellyfin's own active-recording registry when available; falls back to "modified
     /// in the last 90 seconds" if <see cref="IRecordingsManager"/> can't be resolved.
     /// </summary>
+    /// <summary>The file is being recorded now.</summary>
+    public bool IsRecording(string path) => IsStillBeingWritten(path);
+
     private bool IsStillBeingWritten(string path)
     {
         try

@@ -47,6 +47,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         // into it) AND the hosted service that runs the worker loop. Register the singleton
         // first, then hand the same instance to the hosted-service collection.
         serviceCollection.AddSingleton<RepeatAds.FingerprintStore>();
+        serviceCollection.AddSingleton<RepeatAds.LessonStore>();
         serviceCollection.AddSingleton<RepeatAds.RepeatAdService>();
         serviceCollection.AddSingleton<RepeatAds.EndCardService>();
         serviceCollection.AddSingleton<DetectionManager>();

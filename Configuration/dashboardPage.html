@@ -149,6 +149,22 @@
         #ComskipDashboardPage .csd-progress { height: 10px; background: rgba(255,255,255,0.14); border-radius: 5px; overflow: hidden; margin: 10px 0; }
         #ComskipDashboardPage .csd-progress div { height: 100%; background: #00a4dc; width: 0; }
         #ComskipDashboardPage .csd-hidden { display: none !important; }
+        #ComskipDashboardPage .csd-lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin: 1em 0; }
+        #ComskipDashboardPage .csd-lcard { text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: inherit; font: inherit; cursor: pointer; }
+        #ComskipDashboardPage .csd-lcard:hover, #ComskipDashboardPage .csd-lcard:focus-visible { border-color: #00a4dc; }
+        #ComskipDashboardPage .csd-lcard h4 { margin: 0; font-size: 1.15em; display: flex; gap: 10px; align-items: baseline; }
+        #ComskipDashboardPage .csd-lcard h4 .csd-grow { flex: 1; }
+        #ComskipDashboardPage .csd-lstate { font-size: 0.85em; font-weight: 600; }
+        #ComskipDashboardPage .csd-lstate.ok { color: #6fd39a; }
+        #ComskipDashboardPage .csd-lstate.few { color: #f2c56b; }
+        #ComskipDashboardPage .csd-lstate.off { opacity: 0.7; }
+        #ComskipDashboardPage .csd-lkv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 0.9em; }
+        #ComskipDashboardPage .csd-lkv span:nth-child(odd) { opacity: 0.7; }
+        #ComskipDashboardPage .csd-lbar { position: relative; height: 10px; min-width: 160px; background: rgba(255,255,255,0.14); border-radius: 3px; overflow: hidden; }
+        #ComskipDashboardPage .csd-lbar span { position: absolute; top: 0; bottom: 0; background: #c2552f; }
+        #ComskipDashboardPage .csd-lbar.scan span { background: rgba(255,255,255,0.45); }
+        #ComskipDashboardPage tr.csd-loff td { opacity: 0.55; }
+        #ComskipDashboardPage .csd-lnote { padding: 12px 16px; border-radius: 10px; background: rgba(0,164,220,0.1); border: 1px solid rgba(0,164,220,0.35); margin: 0.6em 0 1em; }
         #ComskipDashboardPage .csd-confirm { background: rgba(229,57,53,0.10); border-radius: 8px; padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
         #ComskipDashboardPage .csd-confirm .csd-grow { min-width: 260px; }
         #ComskipDashboardPage .csd-batchline { background: rgba(0,164,220,0.12); border-radius: 8px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
@@ -198,6 +214,7 @@
             <div class="csd-tabs" id="CsdTabs" role="tablist">
                 <button type="button" class="csd-tab" role="tab" data-tab="list" aria-selected="true">Recordings</button>
                 <button type="button" class="csd-tab" role="tab" data-tab="queue" aria-selected="false">Queue <span class="csd-count csd-hidden" id="CsdQueueCount"></span></button>
+                <button type="button" class="csd-tab" role="tab" data-tab="lessons" aria-selected="false">Lessons</button>
             </div>
 
             <!-- Every recording -->
@@ -269,6 +286,44 @@
                         <div class="csd-more csd-hidden" id="CsdQDoneMore"></div>
                     </div>
                 </section>
+            </div>
+
+            <!-- Lessons: hand edits kept for their show to learn from -->
+            <div id="CsdLessons" class="csd-hidden">
+                <div class="csd-lnote">
+                    <div style="font-weight:600">Every hand edit you save is kept as a lesson for its show.</div>
+                    <div class="csd-sub" style="margin-top:4px">Scans learn a show's breaks from its teaching lessons. Re-running Comskip, cutting the commercials out or deleting the recording doesn't take a lesson away: edit the episode again to improve it, or switch it off to stop it teaching. A show learns from 2 lessons, and its break pattern needs 3 of about the same length.</div>
+                </div>
+                <div id="CsdLShows">
+                    <div class="inputContainer" style="max-width: 420px;">
+                        <label class="inputLabel inputLabelUnfocused" for="CsdLSearch">Find a show</label>
+                        <input id="CsdLSearch" type="search" is="emby-input" placeholder="Show name" />
+                    </div>
+                    <div class="csd-lgrid" id="CsdLGrid"></div>
+                </div>
+                <div id="CsdLShow" class="csd-hidden">
+                    <button type="button" class="csd-btn" id="CsdLBack">‹ All shows</button>
+                    <section class="csd-sec" style="margin-top: 1em;">
+                        <div class="csd-sec-h"><h3 id="CsdLTitle"></h3><span class="csd-sum" id="CsdLSum"></span></div>
+                        <div class="csd-tablebox">
+                            <table class="csd-table" style="min-width: 900px;">
+                                <thead><tr><th>Episode</th><th>Saved</th><th>Your breaks</th><th>Recording now</th><th>Teaching</th><th><span class="csd-hidden">Actions</span></th></tr></thead>
+                                <tbody id="CsdLRows"></tbody>
+                            </table>
+                        </div>
+                        <div class="fieldDescription" id="CsdLMsg"></div>
+                        <div class="csd-panel" id="CsdLRest">
+                            <div style="font-weight:600">Scan the rest of the show</div>
+                            <div class="csd-sub" style="margin:4px 0 10px" id="CsdLRestText">Counting the episodes…</div>
+                            <div class="csd-row">
+                                <button type="button" class="csd-btn" id="CsdLRestOlder" disabled>Scan those not scanned since your newest lesson</button>
+                                <button type="button" class="csd-btn" id="CsdLRestAll" disabled>Scan all of them</button>
+                                <span class="csd-sub" id="CsdLRestMsg"></span>
+                            </div>
+                        </div>
+                        <div class="fieldDescription">Grey bars: what the scan had before your first edit. A lesson without its sound (the recording was cut or deleted before it was kept) still counts for the keyframe habit only while its file is there.</div>
+                    </section>
+                </div>
             </div>
 
             <!-- One recording -->
@@ -401,6 +456,7 @@
                             <a is="emby-linkbutton" class="button-link" id="CsdOpen" href="#">Open in Jellyfin</a>
                         </div>
                         <div id="CsdRescanResult" class="fieldDescription"></div>
+                        <div id="CsdLessonLine" class="csd-hidden" style="margin-top: 10px;"></div>
                     </div>
                 </div>
 
@@ -837,8 +893,9 @@
                 $("#CsdTabs").classList.toggle("csd-hidden", editor);
                 $("#CsdList").classList.toggle("csd-hidden", editor || state.tab !== "list");
                 $("#CsdQueue").classList.toggle("csd-hidden", editor || state.tab !== "queue");
+                $("#CsdLessons").classList.toggle("csd-hidden", editor || state.tab !== "lessons");
                 $("#CsdEditor").classList.toggle("csd-hidden", !editor);
-                $("#CsdBack").textContent = state.tab === "queue" ? "‹ Queue" : "‹ All recordings";
+                $("#CsdBack").textContent = state.tab === "queue" ? "‹ Queue" : state.tab === "lessons" ? "‹ Lessons" : "‹ All recordings";
                 page.querySelectorAll("[data-tab]").forEach(function (t) {
                     t.setAttribute("aria-selected", String(t.getAttribute("data-tab") === state.tab));
                 });
@@ -850,6 +907,8 @@
                     ed = null;
                     if (state.tab === "queue") {
                         loadQueue();
+                    } else if (state.tab === "lessons") {
+                        loadLessons();
                     } else {
                         loadList();
                         loadQueue(true);
@@ -865,6 +924,165 @@
                 }
             });
 
+            // ---- Lessons ----
+
+            var lessons = { shows: [], key: null, search: "" };
+
+            function loadLessons() {
+                return api("GET", "ComskipSegments/Dashboard/Lessons").then(function (shows) {
+                    lessons.shows = shows;
+                    if (lessons.key && !shows.some(function (x) { return x.Key === lessons.key; })) {
+                        lessons.key = null;
+                    }
+                    renderLessons();
+                }, function () {
+                    $("#CsdLGrid").innerHTML = '<div class="csd-sub">Couldn\'t load the lessons.</div>';
+                });
+            }
+
+            function lessonState(x) {
+                var all = x.Lessons.length;
+                if (x.Teaching === 0) return ["Paused by you", "off"];
+                if (x.Teaching < 2) return ["Needs " + (2 - x.Teaching) + " more lesson", "few"];
+                return [x.Teaching < 3 ? "Learning (no break pattern yet)" : "Learning", "ok"];
+            }
+
+            function lbar(breaks, seconds, cls) {
+                return '<div class="csd-lbar' + (cls ? " " + cls : "") + '">' + bar(breaks, seconds > 0 ? seconds : 1) + "</div>";
+            }
+
+            function renderLessons() {
+                var x = lessons.key && lessons.shows.filter(function (s) { return s.Key === lessons.key; })[0];
+                $("#CsdLShows").classList.toggle("csd-hidden", !!x);
+                $("#CsdLShow").classList.toggle("csd-hidden", !x);
+                if (!x) {
+                    var q = lessons.search.toLowerCase();
+                    var list = lessons.shows.filter(function (s) { return !q || s.Show.toLowerCase().indexOf(q) >= 0; });
+                    $("#CsdLGrid").innerHTML = list.length ? list.map(function (s) {
+                        var st = lessonState(s), gone = s.Lessons.filter(function (l) { return l.Recording === "gone"; }).length;
+                        return '<button type="button" class="csd-lcard" data-lshow="' + esc(s.Key) + '">'
+                            + '<h4><span>' + esc(s.Show) + '</span><span class="csd-grow"></span><span class="csd-lstate ' + st[1] + '">' + esc(st[0]) + "</span></h4>"
+                            + '<div class="csd-lkv"><span>Lessons</span><span>' + s.Teaching + " teaching" + (s.Lessons.length > s.Teaching ? " · " + (s.Lessons.length - s.Teaching) + " off" : "") + "</span>"
+                            + "<span>Newest</span><span>" + esc(timeOf(s.Newest)) + "</span>"
+                            + (gone ? "<span>Deleted</span><span>" + gone + " recording(s), still teaching from their kept sound</span>" : "")
+                            + "</div></button>";
+                    }).join("") : '<div class="csd-sub">' + (lessons.shows.length ? "No show matches." : "No lessons yet: fix a recording's breaks in the editor and Save.") + "</div>";
+                    return;
+                }
+
+                var st = lessonState(x);
+                if (lessons.planFor !== x.Key) {
+                    lessons.planFor = x.Key;
+                    loadRestPlan(x);
+                }
+                $("#CsdLTitle").textContent = x.Show;
+                $("#CsdLSum").textContent = x.Teaching + " teaching · " + st[0];
+                var NOW = { edit: "Shows your edit", scan: "Re-scanned since", cut: "Commercials cut out", gone: "Deleted" };
+                $("#CsdLRows").innerHTML = x.Lessons.map(function (l) {
+                    return '<tr class="' + (l.Teaching ? "" : "csd-loff") + '">'
+                        + '<td><div style="font-weight:600">' + esc(l.Name) + '</div><div class="csd-sub">' + (l.Origin === "migrated" ? "From an edit made before lessons" : "Saved in the editor") + "</div></td>"
+                        + '<td style="white-space:nowrap">' + esc(timeOf(l.SavedUtc)) + "</td>"
+                        + "<td>" + lbar(l.Breaks, l.Seconds) + (l.ScanBefore ? '<div style="margin-top:4px">' + lbar(l.ScanBefore, l.Seconds, "scan") + "</div>" : "")
+                        + '<div class="csd-sub" style="margin-top:4px">' + l.Breaks.length + " break(s) · " + clock(total(l.Breaks)) + "</div></td>"
+                        + "<td>" + esc(NOW[l.Recording] || l.Recording) + (l.Sound ? "" : '<div class="csd-sub">Sound not kept</div>') + "</td>"
+                        + '<td><label style="display:inline-flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-lteach="' + l.Id + '"' + (l.Teaching ? " checked" : "") + ' style="width:18px;height:18px;accent-color:#00a4dc"> ' + (l.Teaching ? "On" : "Off") + "</label></td>"
+                        + '<td><div class="csd-acts">'
+                        + (l.Recording !== "gone" ? '<button type="button" class="csd-btn sm" data-open="' + l.Id + '">Open in editor</button>' : "")
+                        + (l.Recording === "scan" && l.Restorable ? '<button type="button" class="csd-btn sm" data-lrestore="' + l.Id + '">Put my breaks back</button>' : "")
+                        + '<button type="button" class="csd-btn sm danger" data-lforget="' + l.Id + '" data-name="' + esc(l.Name) + '">Forget…</button>'
+                        + "</div></td></tr>";
+                }).join("");
+            }
+
+            // "Scan the rest of the show": its episodes that are still a scan's, with what it learned.
+            function loadRestPlan(x) {
+                var text = $("#CsdLRestText");
+                $("#CsdLRestOlder").disabled = $("#CsdLRestAll").disabled = true;
+                $("#CsdLRestMsg").textContent = "";
+                text.textContent = "Counting the episodes…";
+                api("GET", "ComskipSegments/Dashboard/Lessons/Rest?key=" + encodeURIComponent(x.Key)).then(function (p) {
+                    if (lessons.planFor !== x.Key) return;
+                    lessons.plan = p;
+                    var left = [];
+                    if (p.Lessons) left.push(p.Lessons + " your lesson" + (p.Lessons > 1 ? "s" : ""));
+                    if (p.Cut) left.push(p.Cut + " cut");
+                    if (p.Kept) left.push(p.Kept + " cleared or another program's");
+                    if (p.Busy) left.push(p.Busy + " recording or busy now");
+                    text.textContent = p.Episodes === 0 ? "No episodes of this show in the library."
+                        : p.Episodes + " episode(s) in the library: " + p.ToScan + " would be scanned again with what the show has learned"
+                            + (p.ToScan ? " (" + p.Older + " not scanned since your newest lesson)" : "")
+                            + (left.length ? "; left alone: " + left.join(", ") : "") + "."
+                            + (x.Teaching < 2 ? " The show needs 2 teaching lessons before scans learn from them." : "")
+                            + " They wait behind new recordings and other scans; one you edit or cut meanwhile is skipped.";
+                    $("#CsdLRestOlder").textContent = "Scan the " + p.Older + " not scanned since your newest lesson";
+                    $("#CsdLRestAll").textContent = "Scan all " + p.ToScan;
+                    $("#CsdLRestOlder").disabled = p.Older === 0 || x.Teaching < 2;
+                    $("#CsdLRestAll").disabled = p.ToScan === 0 || x.Teaching < 2;
+                }, function () {
+                    text.textContent = "Couldn't count the episodes.";
+                });
+            }
+
+            function scanRest(onlyOlder) {
+                var key = lessons.key, p = lessons.plan;
+                var n = onlyOlder ? p.Older : p.ToScan;
+                if (!window.confirm("Scan " + n + " episode(s) of this show again with what it has learned? Their current breaks are replaced; your lessons, cut recordings and other programs' breaks are left alone.")) return;
+                $("#CsdLRestOlder").disabled = $("#CsdLRestAll").disabled = true;
+                api("POST", "ComskipSegments/Dashboard/Lessons/Rest", { Key: key, OnlyOlder: onlyOlder }).then(function (r) {
+                    $("#CsdLRestMsg").textContent = r.Queued + " queued: follow them on the Queue tab.";
+                }, function () {
+                    $("#CsdLRestMsg").textContent = "Couldn't queue them.";
+                    lessons.planFor = null;
+                });
+            }
+
+            $("#CsdLRestOlder").addEventListener("click", function () { scanRest(true); });
+            $("#CsdLRestAll").addEventListener("click", function () { scanRest(false); });
+
+            $("#CsdLGrid").addEventListener("click", function (e) {
+                var c = e.target.closest("[data-lshow]");
+                if (c) {
+                    lessons.key = c.getAttribute("data-lshow");
+                    $("#CsdLMsg").textContent = "";
+                    renderLessons();
+                }
+            });
+            $("#CsdLSearch").addEventListener("input", function () {
+                lessons.search = this.value;
+                renderLessons();
+            });
+            $("#CsdLBack").addEventListener("click", function () {
+                lessons.key = null;
+                lessons.planFor = null;
+                renderLessons();
+            });
+            $("#CsdLRows").addEventListener("change", function (e) {
+                var c = e.target.closest("[data-lteach]");
+                if (c) {
+                    api("PUT", "ComskipSegments/Dashboard/Lessons/" + c.getAttribute("data-lteach") + "/Teaching", { Teaching: c.checked })
+                        .then(loadLessons, loadLessons);
+                }
+            });
+            $("#CsdLRows").addEventListener("click", function (e) {
+                var b;
+                if ((b = e.target.closest("[data-open]"))) {
+                    openEditor(b.getAttribute("data-open"));
+                } else if ((b = e.target.closest("[data-lrestore]"))) {
+                    b.disabled = true;
+                    api("POST", "ComskipSegments/Dashboard/Lessons/" + b.getAttribute("data-lrestore") + "/Restore").then(function (r) {
+                        $("#CsdLMsg").textContent = r.Message;
+                        loadLessons();
+                    }, function () {
+                        b.disabled = false;
+                        $("#CsdLMsg").textContent = "Couldn't put the breaks back.";
+                    });
+                } else if ((b = e.target.closest("[data-lforget]"))) {
+                    if (window.confirm("Forget the lesson of " + b.getAttribute("data-name") + "? The show stops learning from it, for good; the recording's breaks stay as they are.")) {
+                        api("DELETE", "ComskipSegments/Dashboard/Lessons/" + b.getAttribute("data-lforget")).then(loadLessons, loadLessons);
+                    }
+                }
+            });
+
             // ---- The queue ----
 
             var REASONS = {
@@ -873,7 +1091,8 @@
                 library: ["Library check", ""],
                 "segment-scan": ["Media Segment Scan", ""],
                 trim: ["After a trim", "trim"],
-                rescan: ["Re-scan of an old result", ""]
+                rescan: ["Re-scan of an old result", ""],
+                lessons: ["From lessons", "manual"]
             };
             var STAGES = {
                 starting: "Starting", audio: "Checking the audio format", "program-start": "Looking for the program start",
@@ -1146,6 +1365,23 @@
                 });
             }
 
+            function cutNow(r) { return r.Status === "cut"; }
+
+            $("#CsdLessonLine").addEventListener("click", function (e) {
+                var b = e.target.closest("#CsdLessonRestore");
+                if (!b) return;
+                if (ed.dirty && !window.confirm("Put your lesson's breaks back over your unsaved changes?")) return;
+                b.disabled = true;
+                api("POST", "ComskipSegments/Dashboard/Lessons/" + ed.id + "/Restore").then(function (r) {
+                    $("#CsdRescanResult").textContent = r.Message;
+                    ed.dirty = false;
+                    loadDetail(ed.id, false);
+                }, function () {
+                    b.disabled = false;
+                    $("#CsdRescanResult").textContent = "Couldn't put the breaks back.";
+                });
+            });
+
             function renderEditor() {
                 var d = ed.d, r = d.Row;
                 $("#CsdTitle").textContent = r.Series ? r.Series : r.Name;
@@ -1164,6 +1400,16 @@
                         return esc(o.Type) + " " + clock(o.Start) + "–" + clock(o.End);
                     }).join("<br>") : "None") + "</div>"
                     + (d.Scanning ? "<div class=\"csd-warn\" style=\"margin-top:10px\">Comskip is scanning it now.</div>" : "");
+
+                var ls = d.Lesson;
+                $("#CsdLessonLine").classList.toggle("csd-hidden", !ls);
+                if (ls) {
+                    $("#CsdLessonLine").innerHTML = '<div class="csd-sub">Lesson</div><div>'
+                        + (ls.Teaching ? "Teaching" : "Kept, not teaching") + " · saved " + esc(timeOf(ls.SavedUtc)) + " · " + ls.Breaks + " break(s)"
+                        + (r.Source !== "edited" ? " · not what's shown now" : "") + "</div>"
+                        + '<div class="csd-sub">' + ls.Others + " other teaching lesson(s) of this show</div>"
+                        + (r.Source !== "edited" && ls.Restorable && !cutNow(r) ? '<button type="button" class="csd-btn" id="CsdLessonRestore" style="margin-top:6px">Put my breaks back</button>' : "");
+                }
 
                 var cut = r.Status === "cut";
                 $("#CsdSaveBox").classList.toggle("csd-hidden", cut);
@@ -2935,21 +3181,17 @@
                 show(false);
             });
 
-            // Learning reads the show's hand-edited episodes as they are now: nothing is kept apart, so a
-            // re-scan of one takes its edit out of what the show learns from.
-            function rescanWarning(others) {
-                var msg = "Re-running Comskip replaces the breaks you edited, for good.\n\n"
-                    + "Scans learn this show's breaks only from the episodes that are hand-edited right now; this one stops teaching.";
-                if (others != null) {
-                    msg += " The show would have " + (others === 0 ? "none" : others) + " left"
-                        + (others < 2 ? ", so new scans would learn nothing from your edits"
-                            : others < 3 ? ", too few for its break pattern (that needs 3)" : "") + ".";
+            // A re-scan replaces the breaks shown, not the lesson: it keeps teaching, and its breaks can be put back.
+            function rescanWarning(lesson) {
+                if (lesson) {
+                    return "Re-running Comskip replaces the breaks shown here with a fresh scan, so you can see what a scan does now.\n\n"
+                        + "Your edit stays a lesson and keeps teaching the show (Lessons tab); \"Put my breaks back\" restores it here.\n\nRe-run Comskip?";
                 }
-                return msg + "\n\nTo see what a scan does now, re-scan an episode you haven't edited instead.\n\nReplace this edit?";
+                return "Re-running Comskip replaces the breaks you edited. Go ahead?";
             }
 
             $("#CsdRescan").addEventListener("click", function () {
-                if (ed.d.Row.Source === "edited" && !window.confirm(rescanWarning(ed.d.OtherHandEdits))) {
+                if (ed.d.Row.Source === "edited" && !window.confirm(rescanWarning(ed.d.Lesson))) {
                     return;
                 }
                 api("POST", "ComskipSegments/Detect/" + ed.id + "?force=true").then(function (r) {

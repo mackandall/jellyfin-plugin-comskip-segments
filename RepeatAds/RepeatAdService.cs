@@ -38,6 +38,7 @@ public sealed class RepeatAdService
     private readonly DetectionStore _detections;
     private readonly FingerprintStore _store;
     private readonly CommercialCutStore _cuts;
+    private readonly LessonStore _lessons;
     private readonly SemaphoreSlim _matching = new(1, 1);
 
     public RepeatAdService(
@@ -46,7 +47,8 @@ public sealed class RepeatAdService
         IServiceProvider serviceProvider,
         DetectionStore detections,
         FingerprintStore store,
-        CommercialCutStore cuts)
+        CommercialCutStore cuts,
+        LessonStore lessons)
     {
         _logger = logger;
         _libraryManager = libraryManager;
@@ -54,11 +56,14 @@ public sealed class RepeatAdService
         _detections = detections;
         _store = store;
         _cuts = cuts;
+        _lessons = lessons;
     }
 
     private static PluginConfiguration Config => Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
     public FingerprintStore Store => _store;
+
+    public LessonStore Lessons => _lessons;
 
     /// <summary>
     /// Which show a recording belongs to, by name (the same show can be in two libraries with
@@ -202,7 +207,7 @@ public sealed class RepeatAdService
         await _matching.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var pruned = _store.Prune(cfg.RepeatAdKeepDays, IsEdited);
+            var pruned = _store.Prune(cfg.RepeatAdKeepDays, id => _lessons.Has(id) || IsEdited(id));
             if (pruned > 0)
             {
                 _logger.LogInformation("Repeat-ad check: forgot {Count} fingerprint(s) older than {Days} days", pruned, cfg.RepeatAdKeepDays);
@@ -347,101 +352,195 @@ public sealed class RepeatAdService
         _cuts.TryGet(id, out var cut) && cut.SourceBefore == DetectionRecord.SourceEdited && cut.BreaksBefore.Count > 0 ? cut : null;
 
     /// <summary>
-    /// The show's hand-edited episodes (other than this one), each with a fingerprint: made now
-    /// for any that has none or whose file changed since (about 15 s each, once). An episode
-    /// whose commercials you cut out after editing them still teaches: with the breaks from
-    /// before the cut and a fingerprint of the kept original (made while it's kept, then kept).
+    /// The show's teaching lessons (other than this recording's own), each with the fingerprint of
+    /// the file its breaks were saved on: kept since the lesson was saved, or made now from that file
+    /// (or the kept original of a cut one) when it's still there. A lesson whose file is gone and was
+    /// never fingerprinted can't teach.
     /// </summary>
     private async Task<Dictionary<Guid, EditedEpisode>> EditedEpisodesAsync(BaseItem item, string key, CancellationToken ct)
     {
+        MigrateLessons();
         var result = new Dictionary<Guid, EditedEpisode>();
-        foreach (var (id, record) in _detections.All())
+        foreach (var (id, lesson) in _lessons.OfShow(key))
         {
-            if (id == item.Id || _libraryManager.GetItemById(id) is not BaseItem other || other.Path is null || SeriesKey(other) != key)
+            if (id == item.Id || await LessonFingerprintAsync(id, lesson, ct).ConfigureAwait(false) is not { } fp)
             {
                 continue;
             }
 
-            IEnumerable<CommercialBreak> breaks;
-            var hasEntry = _store.TryGetEntry(id, out var entry);
-            string? source;
+            var seconds = fp.Length * RepeatMatcher.Step;
+            if (seconds > 0)
+            {
+                result[id] = new EditedEpisode(
+                    id,
+                    BreakLearning.Normalize(lesson.Breaks.Select(b => new Span(b.StartTicks / 1e7, b.EndTicks / 1e7))),
+                    seconds);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The lesson's file: the recording, or the kept original of a cut one, while it's still the file the breaks were saved on.</summary>
+    public string? LessonFile(Guid id, Lesson lesson)
+    {
+        if (_libraryManager.GetItemById(id) is not BaseItem other || other.Path is null)
+        {
+            return null;
+        }
+
+        foreach (var path in new[] { other.Path, TrimBackups.Find(other.Path) })
+        {
+            // Without a known size and time, only the recording itself, and never once it's cut (the
+            // breaks are on the original's clock).
+            if (path is not null && FileStamp(path) is { } stamp
+                && (lesson.FileLength is null
+                    ? path == other.Path && !(_detections.TryGet(id, out var r) && r.Source == DetectionRecord.SourceCut)
+                    : stamp.Length == lesson.FileLength && stamp.TimeUtc == lesson.FileTimeUtc))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The fingerprint of the lesson's file: the kept one, or made now (and kept) while the file is there.</summary>
+    private async Task<uint[]?> LessonFingerprintAsync(Guid id, Lesson lesson, CancellationToken ct)
+    {
+        if (_store.TryGetEntry(id, out var entry) && _store.Load(id) is { } kept)
+        {
+            // A lesson knows its file's size and time; one made of an older edit doesn't: its fingerprint
+            // is good while it was made of the file as it is now (or of the original, kept before a cut).
+            var same = lesson.FileLength is not null
+                ? entry.Length == lesson.FileLength && entry.FileTimeUtc == lesson.FileTimeUtc
+                : entry.PreCut || FileStamp(_libraryManager.GetItemById(id)?.Path ?? string.Empty) is not { } now
+                    || (now.Length == entry.Length && now.TimeUtc == entry.FileTimeUtc);
+            if (same)
+            {
+                return kept;
+            }
+        }
+
+        if (LessonFile(id, lesson) is not { } source || FileStamp(source) is not { } stamp)
+        {
+            return null;
+        }
+
+        var preCut = _libraryManager.GetItemById(id)?.Path != source;
+        _logger.LogInformation("Repeat-ad check: fingerprinting {Path} to learn from its lesson", source);
+        if (await FingerprintAsync(source, ct).ConfigureAwait(false) is not { } made)
+        {
+            return null;
+        }
+
+        await _matching.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            _store.Save(id, made, new FingerprintEntry(lesson.SeriesKey, lesson.Name, stamp.Length, stamp.TimeUtc, DateTime.UtcNow, preCut));
+        }
+        finally
+        {
+            _matching.Release();
+        }
+
+        return made;
+    }
+
+    /// <summary>
+    /// Keeps a hand edit just saved as its show's lesson (replacing an earlier lesson of the same
+    /// recording, keeping whether it teaches and what the scan had), and its sound in the background
+    /// so cutting or deleting the recording doesn't take it away.
+    /// </summary>
+    /// <param name="before">The recording's breaks before this save.</param>
+    public Lesson RememberEdit(BaseItem item, IReadOnlyList<CommercialBreak> breaks, DetectionRecord? before)
+    {
+        _lessons.TryGet(item.Id, out var earlier);
+        var stamp = item.Path is null ? null : FileStamp(item.Path);
+        var scanBefore = earlier?.ScanBefore
+            ?? (before is { Source: not DetectionRecord.SourceEdited and not DetectionRecord.SourceCut and not DetectionRecord.SourceCleared } b
+                && b.Status == DetectionStatus.Detected ? b.Breaks : null);
+        var lesson = new Lesson(
+            SeriesKey(item),
+            ShowName(item),
+            LessonName(item),
+            breaks.OrderBy(b => b.StartTicks).ToList(),
+            (item.RunTimeTicks ?? 0) / 1e7,
+            DateTime.UtcNow,
+            earlier?.Teaching ?? true,
+            stamp?.Length,
+            stamp?.TimeUtc,
+            scanBefore);
+        _lessons.Save(item.Id, lesson);
+
+        if (Config.RepeatAdLearnFromEdits)
+        {
+            var id = item.Id;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await LessonFingerprintAsync(id, lesson, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not keep the sound of {Name}'s lesson", lesson.Name);
+                }
+            });
+        }
+
+        return lesson;
+    }
+
+    public static string ShowName(BaseItem item) => item is Episode e && !string.IsNullOrWhiteSpace(e.SeriesName) ? e.SeriesName : item.Name;
+
+    public static string LessonName(BaseItem item) =>
+        item is Episode e && e.ParentIndexNumber is { } s && e.IndexNumber is { } n ? $"S{s:00}E{n:00} · {item.Name}" : item.Name;
+
+    /// <summary>
+    /// Once: the hand edits from before lessons existed become lessons (edited recordings, and
+    /// cut ones edited before the cut, with the breaks they had then).
+    /// </summary>
+    public void MigrateLessons()
+    {
+        if (_lessons.Migrated)
+        {
+            return;
+        }
+
+        var found = new List<(Guid, Lesson)>();
+        foreach (var (id, record) in _detections.All())
+        {
+            if (_libraryManager.GetItemById(id) is not BaseItem other || other.Path is null)
+            {
+                continue;
+            }
+
+            IReadOnlyList<CommercialBreak> breaks;
             (long Length, DateTime TimeUtc)? stamp;
-            var preCut = false;
             if (record.Source == DetectionRecord.SourceEdited)
             {
                 breaks = record.Breaks;
-                source = other.Path;
-                stamp = FileStamp(source);
-                if (stamp is null)
-                {
-                    continue;
-                }
-
-                if (hasEntry && (entry.PreCut || entry.Length != stamp.Value.Length || entry.FileTimeUtc != stamp.Value.TimeUtc))
-                {
-                    hasEntry = false; // made of something else (before an Undo of a cut, or the file changed since)
-                }
+                stamp = FileStamp(other.Path);
             }
             else if (record.Source == DetectionRecord.SourceCut && EditedBeforeCut(id) is { } cut)
             {
                 breaks = cut.BreaksBefore;
-                preCut = true;
-                source = TrimBackups.Find(other.Path);
-                stamp = source is null ? null : FileStamp(source);
-                if (hasEntry && !entry.PreCut
-                    && (stamp is null || entry.Length != stamp.Value.Length || entry.FileTimeUtc != stamp.Value.TimeUtc))
-                {
-                    hasEntry = false; // made of the cut file, or of a different original
-                }
-
-                if (!hasEntry && stamp is null)
-                {
-                    continue; // the original is gone, and wasn't fingerprinted while it was kept
-                }
+                stamp = TrimBackups.Find(other.Path) is { } original ? FileStamp(original)
+                    : _store.TryGetEntry(id, out var e) && e.PreCut ? (e.Length, e.FileTimeUtc) : null;
             }
             else
             {
                 continue;
             }
 
-            if (!hasEntry)
-            {
-                _logger.LogInformation(
-                    preCut ? "Repeat-ad check: fingerprinting the kept original of cut, hand-edited {Path} to learn from it"
-                        : "Repeat-ad check: fingerprinting hand-edited {Path} to learn from it",
-                    other.Path);
-                if (await FingerprintAsync(source!, ct).ConfigureAwait(false) is not { } made)
-                {
-                    continue;
-                }
-
-                await _matching.WaitAsync(ct).ConfigureAwait(false);
-                try
-                {
-                    _store.Save(id, made, new FingerprintEntry(key, other.Name, stamp!.Value.Length, stamp.Value.TimeUtc, DateTime.UtcNow, preCut));
-                }
-                finally
-                {
-                    _matching.Release();
-                }
-            }
-            else if (preCut && !entry.PreCut)
-            {
-                // Made before the cut, of what is now the kept original: keep it when that goes.
-                _store.MarkPreCut(id);
-            }
-
-            var seconds = _store.Load(id) is { } f ? f.Length * RepeatMatcher.Step : 0;
-            if (seconds > 0)
-            {
-                result[id] = new EditedEpisode(
-                    id,
-                    BreakLearning.Normalize(breaks.Select(b => new Span(b.StartTicks / 1e7, b.EndTicks / 1e7))),
-                    seconds);
-            }
+            found.Add((id, new Lesson(
+                SeriesKey(other), ShowName(other), LessonName(other), breaks.OrderBy(b => b.StartTicks).ToList(),
+                (other.RunTimeTicks ?? 0) / 1e7, record.UpdatedUtc, true, stamp?.Length, stamp?.TimeUtc, null, "migrated")));
         }
 
-        return result;
+        var added = _lessons.AddMigrated(found);
+        _logger.LogInformation("Lessons: made {Count} lesson(s) of the hand edits from before lessons existed", added);
     }
 
     /// <summary>Least edited episodes of about this length, with the same number of breaks, for a pattern.</summary>
@@ -562,7 +661,7 @@ public sealed class RepeatAdService
         }
     }
 
-    private static (long Length, DateTime TimeUtc)? FileStamp(string path)
+    public static (long Length, DateTime TimeUtc)? FileStamp(string path)
     {
         try
         {
