@@ -409,9 +409,24 @@ public class PluginConfiguration : BasePluginConfiguration
     public int ProgramStartScanMinutes { get; set; } = 10;
 
     /// <summary>
+    /// A recording JellyDVR Schedule lengthened for a late game ("Sports overruns") opens on the
+    /// game coverage: look for the card through the extra minutes too, so the program start (a
+    /// marker or a trim, as set above) skips or cuts that coverage.
+    /// </summary>
+    public bool ProgramStartAfterOverruns { get; set; } = true;
+
+    /// <summary>
     /// How alike a frame must be to a remembered card to count (0–1, normalized correlation
     /// of 96×54 greyscale frames). On Starz recordings the cards scored 0.83–0.97 against
     /// cards from other films and the closest other frame 0.53, so 0.70 sits in the gap.
     /// </summary>
     public double ProgramStartMatchThreshold { get; set; } = 0.70;
+
+    /// <summary>
+    /// An automatic trim needs a match at least this strong (0–1); a weaker one (still above
+    /// <see cref="ProgramStartMatchThreshold"/>) is only marked, so playback skips to it and the
+    /// file stays whole. 0 trims on any match. Asking for it by hand ("Find program start")
+    /// always does what the program-start setting says.
+    /// </summary>
+    public double ProgramStartTrimMinScore { get; set; } = 0.90;
 }

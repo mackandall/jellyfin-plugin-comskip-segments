@@ -47,6 +47,64 @@ public sealed class TrimBackups
         Path.Combine(Path.GetDirectoryName(backupPath)!, Path.GetFileNameWithoutExtension(backupPath) + ".edl");
 
     /// <summary>
+    /// The .edl beside a cut or trimmed recording no longer matches it. This plugin's own is
+    /// deleted (a rescan writes a new one). Another program's goes with the kept original, named
+    /// after it (returned), so it's never read again, Undo puts it back, and it expires, moves and
+    /// is deleted along with the original. With no original kept there's no Undo, so it's deleted.
+    /// </summary>
+    public static string? PutEdlAside(string path, Func<string, bool> isOwned, ILogger logger)
+    {
+        if (Detection.DetectionManager.SiblingEdlPath(path) is not { } edl || !File.Exists(edl))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (isOwned(edl))
+            {
+                File.Delete(edl);
+                return null;
+            }
+
+            if (Find(path) is not { } backup)
+            {
+                File.Delete(edl);
+                logger.LogInformation("Deleted {Edl}: it no longer matches the cut recording, and no original was kept to undo to", edl);
+                return null;
+            }
+
+            var aside = EdlFor(backup);
+            File.Move(edl, aside, overwrite: true);
+            return aside;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not move the .edl beside {Path} out of the way", path);
+            return null;
+        }
+    }
+
+    /// <summary>Undo: the .edl kept with <paramref name="backupPath"/> (another program's) goes back beside the recording.</summary>
+    public static void PutEdlBack(string recordingPath, string backupPath, ILogger logger)
+    {
+        var aside = EdlFor(backupPath);
+        if (!File.Exists(aside) || Detection.DetectionManager.SiblingEdlPath(recordingPath) is not { } edl)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Move(aside, edl, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not put the .edl beside {Path} back", recordingPath);
+        }
+    }
+
+    /// <summary>
     /// The kept original of <paramref name="recordingPath"/>, if there is one: the hidden backup,
     /// or one kept visibly as "&lt;name&gt;.original&lt;ext&gt;" by an earlier version.
     /// </summary>

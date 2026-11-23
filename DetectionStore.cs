@@ -102,7 +102,33 @@ public sealed class DetectionStore
     /// "imported"; any other .edl beside a video belongs to another program and is
     /// read but never overwritten.
     /// </summary>
-    public bool IsOwnedEdl(string edlPath) => _ownedEdls.ContainsKey(edlPath);
+    /// <remarks>
+    /// Recordings get moved (an archive move takes the .edl along): one of ours by the same name,
+    /// whose old path is gone, is this file moved, and is taken over under its new path.
+    /// </remarks>
+    public bool IsOwnedEdl(string edlPath)
+    {
+        if (_ownedEdls.ContainsKey(edlPath))
+        {
+            return true;
+        }
+
+        var name = Path.GetFileName(edlPath);
+        var moved = _ownedEdls.Keys.FirstOrDefault(p =>
+            string.Equals(Path.GetFileName(p), name, StringComparison.Ordinal)
+            && !string.Equals(p, edlPath, StringComparison.Ordinal)
+            && !File.Exists(p));
+        if (moved is null)
+        {
+            return false;
+        }
+
+        _ownedEdls.TryRemove(moved, out _);
+        _ownedEdls.TryAdd(edlPath, 0);
+        PersistOwnedEdls();
+        _logger.LogInformation("{Edl} is this plugin's own, moved from {Old}", edlPath, Path.GetDirectoryName(moved));
+        return true;
+    }
 
     public void MarkOwnedEdl(string edlPath)
     {

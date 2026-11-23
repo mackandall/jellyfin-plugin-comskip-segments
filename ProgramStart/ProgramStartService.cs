@@ -62,6 +62,8 @@ public sealed class ProgramStartService
 
     private static PluginConfiguration Config => Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
+    private string DataPath() => _serviceProvider.GetRequiredService<MediaBrowser.Common.Configuration.IApplicationPaths>().DataPath;
+
     private static ProgramStartResult Busy() =>
         new(false, false, null, "Already working on this recording; wait for that to finish.");
 
@@ -245,9 +247,21 @@ public sealed class ProgramStartService
         }
 
         var cfg = Config;
-        var frames = await CardFrames.SampleAsync(Ffmpeg(), item.Path!, 0, Math.Clamp(cfg.ProgramStartScanMinutes, 1, 60) * 60, job.Cancel.Token).ConfigureAwait(false);
+        var minutes = Math.Clamp(cfg.ProgramStartScanMinutes, 1, 60);
+        // Lengthened for a late game: the recording opens on the end of the game coverage, and the
+        // program starts somewhere in the extra minutes. Look through all of them, and take the
+        // card's FIRST showing there: a later one (a bumper inside the program) would cut the
+        // program, while an early one (a promo in the coverage) only leaves some coverage in.
+        var overrun = cfg.ProgramStartAfterOverruns ? OverrunLink.For(DataPath(), item) : null;
+        if (overrun is not null)
+        {
+            minutes = Math.Clamp(Math.Max(minutes, overrun.PrePaddingMinutes + overrun.ExtraMinutes + 10), 1, 150);
+            _logger.LogInformation("Program start: {Path} was lengthened {Extra} min ({Reason}); looking through its first {Minutes} min", item.Path, overrun.ExtraMinutes, overrun.Reason, minutes);
+        }
+
+        var frames = await CardFrames.SampleAsync(Ffmpeg(), item.Path!, 0, minutes * 60, job.Cancel.Token).ConfigureAwait(false);
         var pictures = cards.Select(c => Convert.FromBase64String(c.Pixels)).ToList();
-        var hit = LastRun(frames, pictures, cfg.ProgramStartMatchThreshold, around: null);
+        var hit = LastRun(frames, pictures, cfg.ProgramStartMatchThreshold, around: null, first: overrun is not null);
         if (hit is null)
         {
             if (automatic)
@@ -256,16 +270,25 @@ public sealed class ProgramStartService
                 _store.Save(item.Id, new ProgramStartRecord(0, ProgramStartRecord.SourceNone, null, string.Empty, "no card found", DateTime.UtcNow));
             }
 
-            return new ProgramStartResult(false, false, null, $"No remembered card in the first {cfg.ProgramStartScanMinutes} minutes.");
+            return new ProgramStartResult(false, false, null, $"No remembered card in the first {minutes} minutes.");
         }
 
         var (_, end, best, cardIndex) = hit.Value;
         var start = CardFrames.StartAfterCard(frames, end) / (double)CardFrames.FramesPerSecond;
         var card = cards[cardIndex];
         _logger.LogInformation("Program start: card \"{Label}\" found in {Path} (score {Score:F2}); program starts at {Start:F1}s", card.Label, item.Path, best, start);
+        // Unattended, a doubtful match only marks: a wrong mark costs nothing, a wrong cut loses
+        // part of the program until someone undoes it.
+        var minScore = Math.Clamp(cfg.ProgramStartTrimMinScore, 0, 1);
+        var markOnly = automatic && cfg.ProgramStartAction == PluginConfiguration.ProgramStartTrim && best < minScore;
+        if (markOnly)
+        {
+            _logger.LogInformation("Program start: match {Score:F2} is below {Min:F2} for an automatic trim; {Path} is marked, not cut", best, minScore, item.Path);
+        }
+
         return await ApplyAsync(
             item, start, automatic ? ProgramStartRecord.SourceCardAuto : ProgramStartRecord.SourceCard, card.Id,
-            $"after \"{card.Label}\" (match {best:F2})", job, background).ConfigureAwait(false);
+            overrun is null ? $"after \"{card.Label}\" (match {best:F2})" : $"after \"{card.Label}\" (match {best:F2}), past the extra time the recording was lengthened for ({overrun.Reason})", job, background, markerOnly: markOnly).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -331,6 +354,9 @@ public sealed class ProgramStartService
             return new ProgramStartResult(false, false, start, outcome.Message == "stopped" ? "Cutting stopped; the recording is untouched." : $"Couldn't trim it: {outcome.Message}");
         }
 
+        // Its breaks are timed for the uncut file: an .edl beside it would be read back as is.
+        Editing.TrimBackups.PutEdlAside(item.Path!, e => _serviceProvider.GetService<Detection.DetectionStore>()?.IsOwnedEdl(e) == true, _logger);
+
         // The file now starts (almost) at the program: nothing left to mark.
         _store.Save(item.Id, new ProgramStartRecord(0, source, cardId, PluginConfiguration.ProgramStartTrim, $"trimmed {lead:F1}s, {how}", DateTime.UtcNow, outcome.BackupPath));
         await RefreshAsync(item).ConfigureAwait(false);
@@ -363,6 +389,7 @@ public sealed class ProgramStartService
             job.Phase = CutJob.PhaseFinishing;
             // Same folder, so a rename: the original replaces the trimmed copy in one step.
             File.Move(backup, item.Path!, overwrite: true);
+            Editing.TrimBackups.PutEdlBack(item.Path!, backup, _logger);
             _serviceProvider.GetService<Editing.TrimBackups>()?.Forget(backup);
             _store.Save(item.Id, new ProgramStartRecord(0, ProgramStartRecord.SourceUndone, null, string.Empty, "trim undone", DateTime.UtcNow));
             _serviceProvider.GetService<AudioTrimStore>()?.Save(
@@ -427,8 +454,12 @@ public sealed class ProgramStartService
             _logger.LogWarning(ex, "Could not clear stale segments after a program-start trim for {Path}", item.Path);
         }
 
-        _serviceProvider.GetService<Detection.DetectionStore>()?.Remove(item.Id);
-        _serviceProvider.GetService<Detection.DetectionManager>()?.Enqueue(item.Id, force: false, reason: Detection.ScanReason.AfterTrim);
+        // Marks it had are what's being replaced: scan it again even outside the recordings
+        // folder (an archived recording), where an automatic scan wouldn't otherwise go.
+        var store = _serviceProvider.GetService<Detection.DetectionStore>();
+        var hadMarks = store?.TryGet(item.Id, out var before) == true && before.Status == Detection.DetectionStatus.Detected;
+        store?.Remove(item.Id);
+        _serviceProvider.GetService<Detection.DetectionManager>()?.Enqueue(item.Id, force: hadMarks, reason: Detection.ScanReason.AfterTrim);
     }
 
     // Re-asks the segment providers (ours serves the marker) so players see it now.
@@ -450,7 +481,7 @@ public sealed class ProgramStartService
     /// card comes after any earlier ones (a previous film's tail, a promo). With
     /// <paramref name="around"/>, only the run that contains (or is nearest) that frame.
     /// </summary>
-    private static (int Start, int End, double Best, int Card)? LastRun(IReadOnlyList<byte[]> frames, IReadOnlyList<byte[]> cards, double threshold, int? around)
+    private static (int Start, int End, double Best, int Card)? LastRun(IReadOnlyList<byte[]> frames, IReadOnlyList<byte[]> cards, double threshold, int? around, bool first = false)
     {
         var runs = new List<(int Start, int End, double Best, int Card)>();
         (int Start, int End, double Best, int Card)? current = null;
@@ -495,7 +526,7 @@ public sealed class ProgramStartService
 
         return around is { } at
             ? runs.OrderBy(r => at < r.Start ? r.Start - at : at > r.End ? at - r.End : 0).First()
-            : runs[^1];
+            : first ? runs[0] : runs[^1];
     }
 
     private string Ffmpeg() =>

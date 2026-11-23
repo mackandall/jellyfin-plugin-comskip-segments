@@ -522,38 +522,7 @@ public sealed class CommercialCutService
     /// it (returned), so it's never read again, Undo puts it back, and it expires, moves and is
     /// deleted along with the original. With no original kept there's no Undo, so it's deleted.
     /// </summary>
-    private string? PutEdlAside(string path)
-    {
-        if (DetectionManager.SiblingEdlPath(path) is not { } edl || !File.Exists(edl))
-        {
-            return null;
-        }
-
-        try
-        {
-            if (_detections.IsOwnedEdl(edl))
-            {
-                File.Delete(edl);
-                return null;
-            }
-
-            if (TrimBackups.Find(path) is not { } backup)
-            {
-                File.Delete(edl);
-                _logger.LogInformation("Deleted {Edl}: it no longer matches the cut recording, and no original was kept to undo to", edl);
-                return null;
-            }
-
-            var aside = TrimBackups.EdlFor(backup);
-            File.Move(edl, aside, overwrite: true);
-            return aside;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.LogWarning(ex, "Could not move the .edl beside {Path} out of the way", path);
-            return null;
-        }
-    }
+    private string? PutEdlAside(string path) => TrimBackups.PutEdlAside(path, _detections.IsOwnedEdl, _logger);
 
     private void RestoreEdl(string path, string? foreignAside, IReadOnlyList<CommercialBreak>? breaks)
     {

@@ -277,10 +277,22 @@
                         <input id="ProgramStartScanMinutes" name="ProgramStartScanMinutes" type="number" min="1" max="60" step="1" is="emby-input" />
                     </div>
 
+                    <label class="checkboxContainer">
+                        <input id="ProgramStartAfterOverruns" name="ProgramStartAfterOverruns" type="checkbox" is="emby-checkbox" />
+                        <span>Recordings lengthened for a late game: look through the extra time too</span>
+                    </label>
+                    <div class="fieldDescription" style="margin-bottom:1em;">With JellyDVR Schedule's Sports overruns, a show after a game that ran late is recorded from its normal time, so it opens on the end of the game coverage. This looks for the show's card through all the extra minutes and uses the card's first showing, so the coverage before it is skipped or cut (as chosen above) and the show itself never is. Remember the show's or channel's opening card once for this to work.</div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ProgramStartMatchThreshold">How alike a frame must be to a card (0–1)</label>
                         <input id="ProgramStartMatchThreshold" name="ProgramStartMatchThreshold" type="number" min="0.5" max="0.99" step="0.01" is="emby-input" />
                         <div class="fieldDescription">0.70 by default. Starz rating cards scored 0.83–0.97 against other films' cards; the closest other frame 0.53.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ProgramStartTrimMinScore">Cut automatically only on a match this strong (0–1)</label>
+                        <input id="ProgramStartTrimMinScore" name="ProgramStartTrimMinScore" type="number" min="0" max="1" step="0.01" is="emby-input" />
+                        <div class="fieldDescription">0.90 by default. When the program start is set to cut, a weaker match found automatically is only marked (playback skips to it, the file stays whole) so nothing is lost on a doubtful match. 0 cuts on any match. "Find program start" asked for by hand always cuts.</div>
                     </div>
 
                     <h3 style="margin-bottom:0.3em;">Remembered cards</h3>
@@ -608,7 +620,9 @@
                 page.querySelector("#CutRounding").value = config.CutRounding || "keep-ad";
                 page.querySelector("#ProgramStartAutomatic").checked = config.ProgramStartAutomatic !== false;
                 page.querySelector("#ProgramStartScanMinutes").value = config.ProgramStartScanMinutes || 10;
+                page.querySelector("#ProgramStartAfterOverruns").checked = config.ProgramStartAfterOverruns !== false;
                 page.querySelector("#ProgramStartMatchThreshold").value = config.ProgramStartMatchThreshold || 0.7;
+                page.querySelector("#ProgramStartTrimMinScore").value = config.ProgramStartTrimMinScore != null ? config.ProgramStartTrimMinScore : 0.9;
                 loadStartCards(page);
             }
 
@@ -1019,8 +1033,11 @@
                         config.ProgramStartAutomatic = page.querySelector("#ProgramStartAutomatic").checked;
                         var scanMinutes = parseInt(page.querySelector("#ProgramStartScanMinutes").value, 10);
                         config.ProgramStartScanMinutes = isNaN(scanMinutes) ? 10 : scanMinutes;
+                        config.ProgramStartAfterOverruns = page.querySelector("#ProgramStartAfterOverruns").checked;
                         var threshold = parseFloat(page.querySelector("#ProgramStartMatchThreshold").value);
                         config.ProgramStartMatchThreshold = isNaN(threshold) ? 0.7 : threshold;
+                        var trimMin = parseFloat(page.querySelector("#ProgramStartTrimMinScore").value);
+                        config.ProgramStartTrimMinScore = isNaN(trimMin) ? 0.9 : Math.min(1, Math.max(0, trimMin));
 
                         ApiClient.updatePluginConfiguration(pluginUniqueId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
