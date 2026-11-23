@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/icon.png",
     "versions": [
       {
+        "version": "1.3.9.1",
+        "changelog": "Web item menu: on a show, season or other folder only the scan is offered, saying how many episodes it covers (\"Scan all 8 episodes for commercials\"); the audio-format fix and Find program start, which work on one recording, stay on single recordings.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.9.1/jellyfin-plugin-comskip-segments_1.3.9.1.zip",
+        "checksum": "08ea3d1bc8fd0410e8b0be07a68890ce",
+        "timestamp": "2026-11-23T06:52:13.0000000Z"
+      },
+      {
         "version": "1.3.9.0",
         "changelog": "Hand edits become lessons for their show (new Lessons tab, Scan the rest of the show), and re-running Comskip on an edited episode warns first. Break edges go on the black's keyframe (learned per show, new setting). Breaks run on to the channel's countdown that ends them, and a show's break pattern no longer leaves a break of pure show. With JellyDVR Schedule's Sports overruns, the program-start card is looked for through the extra time, so a show after a late game is skipped or cut to where it really starts; an automatic cut needs a strong match (new setting, 0.90), a weaker one is only marked. After a program-start trim the commercial marks are found again, also for archived recordings.",
         "targetAbi": "12.0.0.0",
