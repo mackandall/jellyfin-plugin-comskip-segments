@@ -237,9 +237,10 @@ public sealed class DetectionManager : BackgroundService
 
     /// <summary>
     /// Whether this recording's edges go on the black's keyframe (setting "Put edges on a black
-    /// keyframe"). Learned: the show's hand-edited episodes (at least two, six edges) have at least
-    /// 60% of their edges on a keyframe. By chance that's one edge in 15–60 (a keyframe every
-    /// 0.5–2 s), so it only happens when they were put there on purpose.
+    /// keyframe"). Learned: in the show's hand-edited episodes (at least two, six edges), at least
+    /// 60% of the edges whose black had a keyframe in it are on that keyframe. Edges on black with
+    /// no keyframe, or on a plain cut, had no choice and aren't counted, so a show seen on two
+    /// channels (FBI: CBS keys its black, ION's reruns don't) learns from the one that does.
     /// </summary>
     private async Task<bool> EdgesOnKeyframesAsync(BaseItem item, string? mode, CancellationToken ct)
     {
@@ -248,8 +249,10 @@ public sealed class DetectionManager : BackgroundService
             return true;
         }
 
+        var encoder = _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>();
         if (!string.Equals(mode ?? "learn", "learn", StringComparison.OrdinalIgnoreCase)
-            || _serviceProvider.GetService<MediaBrowser.Controller.MediaEncoding.IMediaEncoder>()?.ProbePath is not { Length: > 0 } probe)
+            || encoder?.ProbePath is not { Length: > 0 } probe
+            || encoder.EncoderPath is not { Length: > 0 } ffmpeg)
         {
             return false;
         }
@@ -275,17 +278,21 @@ public sealed class DetectionManager : BackgroundService
                         .SelectMany(b => new[] { b.StartTicks / 1e7, b.EndTicks / 1e7 })
                         .Where(t => t > 1 && (seconds <= 0 || t < seconds - 1))
                         .ToList();
-                    var on = 0;
+                    // Only edges whose black had a keyframe to put them on count: an edge on black
+                    // without one (a channel that doesn't key its black, like ION's reruns) or on a
+                    // plain cut shows nothing about the habit, and mustn't outvote the ones that do.
+                    int choices = 0, on = 0;
                     foreach (var t in times)
                     {
-                        var keys = await Keyframes.AroundAsync(probe, file!, t, 0.6, ct).ConfigureAwait(false);
-                        if (keys.Any(k => Math.Abs(k - t) <= 0.004))
+                        var choice = await EdgeSnap.KeyframeChoiceAsync(ffmpeg, probe, file!, t, ct).ConfigureAwait(false);
+                        if (choice != EdgeSnap.KeyframeChoice.NoChoice)
                         {
-                            on++;
+                            choices++;
+                            on += choice == EdgeSnap.KeyframeChoice.OnKeyframe ? 1 : 0;
                         }
                     }
 
-                    seen = (times.Count, on);
+                    seen = (choices, on);
                     _editKeyframes[(id, lesson.SavedUtc)] = seen;
                 }
 
@@ -301,7 +308,7 @@ public sealed class DetectionManager : BackgroundService
             if (episodes > 0)
             {
                 _logger.LogInformation(
-                    "Edges on keyframes for {Path}: {OnKey} of {Edges} edges in {Episodes} lesson(s) of the show are on a keyframe: {Learned}",
+                    "Edges on keyframes for {Path}: {OnKey} of {Edges} edges whose black had a keyframe, in {Episodes} lesson(s) of the show, are on it: {Learned}",
                     item.Path, onKey, edges, episodes, learned ? "edges go on the black's keyframe" : "not learned");
             }
 

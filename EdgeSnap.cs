@@ -152,33 +152,11 @@ public static partial class EdgeSnap
     internal static (double T, Kind Kind, double? Inner) Place(
         IReadOnlyList<(double T, double Luma, double Scene)> frames, double t, double window, bool isStart, IReadOnlyList<double>? keyframes = null)
     {
-        // Black runs: [first black frame, first frame after it). A run cut off by either end of
-        // what was decoded has an unknown end on that side and is only used for the other one.
-        var runs = new List<(double Start, double End, bool StartKnown, bool EndKnown)>();
-        int? runFrom = null;
-        for (var i = 0; i < frames.Count; i++)
-        {
-            var isBlack = frames[i].Luma < BlackLuma;
-            if (isBlack && runFrom is null)
-            {
-                runFrom = i;
-            }
-            else if (!isBlack && runFrom is { } from)
-            {
-                runs.Add((frames[from].T, frames[i].T, from > 0, true));
-                runFrom = null;
-            }
-        }
-
-        if (runFrom is { } open)
-        {
-            runs.Add((frames[open].T, frames[^1].T, open > 0, false));
-        }
+        var runs = Runs(frames);
 
         // The edge is already in a black run (Comskip puts it there): the run's own end, however
         // long the black lasts. Otherwise the nearest run whose start (for a break's start) or
         // end (for its end) is within the window.
-        const double OneFrame = 0.034;
         foreach (var r in runs)
         {
             if (r.Start - OneFrame <= t && t <= r.End + OneFrame && (isStart ? r.StartKnown : r.EndKnown))
@@ -211,12 +189,7 @@ public static partial class EdgeSnap
         (double, Kind, double?) OnRun((double Start, double End, bool StartKnown, bool EndKnown) r)
         {
             var inner = isStart ? (r.EndKnown ? r.End : (double?)null) : (r.StartKnown ? r.Start : null);
-            // The black run's pictures are [Start, End): its keyframes, as the frames' own times.
-            var keys = keyframes is null ? new List<double>() : frames
-                .Where(f => f.T >= r.Start - SamePicture && f.T < r.End - SamePicture && f.Luma < BlackLuma
-                    && keyframes.Any(k => Math.Abs(k - f.T) <= SamePicture))
-                .Select(f => f.T)
-                .ToList();
+            var keys = keyframes is null ? new List<double>() : KeyframesIn(frames, r.Start, r.End, keyframes);
             if (keys.Count > 0)
             {
                 return (isStart ? keys[0] : keys[^1], Kind.BlackKeyframe, inner);
@@ -225,6 +198,92 @@ public static partial class EdgeSnap
             return (isStart ? r.Start : r.End, Kind.Black, inner);
         }
     }
+
+    /// <summary>
+    /// For an edge placed by hand: whether the black it's on had a keyframe to put it on, and if so
+    /// whether it's on one. An edge on black without a keyframe in it (ION's reruns) or on a plain
+    /// cut had no such choice, and says nothing about the show's habit.
+    /// </summary>
+    public enum KeyframeChoice
+    {
+        NoChoice,
+        OnKeyframe,
+        OffKeyframe
+    }
+
+    /// <summary>How much is decoded either side of a hand-placed edge to see the black run it's on (junction black lasts up to about 1.1 s).</summary>
+    private const double ChoiceReach = 1.5;
+
+    /// <summary>See <see cref="KeyframeChoice"/>: decodes about three seconds around <paramref name="t"/>.</summary>
+    public static async Task<KeyframeChoice> KeyframeChoiceAsync(
+        string ffmpegPath, string ffprobePath, string path, double t, CancellationToken ct)
+    {
+        var (start, _) = await AudioChannelScanner.ProbeFormatTimes(ffprobePath, path, ct).ConfigureAwait(false);
+        var frames = await DecodeAsync(ffmpegPath, ffprobePath, path, start, t - ChoiceReach, t + ChoiceReach, ct).ConfigureAwait(false);
+        var keys = await Keyframes.AroundAsync(ffprobePath, path, t, ChoiceReach, ct).ConfigureAwait(false);
+        return ChoiceAt(frames, t, keys);
+    }
+
+    /// <summary>The decision of <see cref="KeyframeChoiceAsync"/> from the pictures around the edge (kept apart for testing).</summary>
+    internal static KeyframeChoice ChoiceAt(IReadOnlyList<(double T, double Luma, double Scene)> frames, double t, IReadOnlyList<double> keyframes)
+    {
+        foreach (var r in Runs(frames))
+        {
+            // On the run: from its first black picture to the first picture after it.
+            if (r.Start - OneFrame <= t && t <= r.End + OneFrame)
+            {
+                if (KeyframesIn(frames, r.Start, r.End, keyframes).Count == 0)
+                {
+                    return KeyframeChoice.NoChoice;
+                }
+
+                return keyframes.Any(k => Math.Abs(k - t) <= SamePicture) ? KeyframeChoice.OnKeyframe : KeyframeChoice.OffKeyframe;
+            }
+        }
+
+        return KeyframeChoice.NoChoice;
+    }
+
+    /// <summary>About one picture (30 fps), the slack when asking whether an edge is on a black run.</summary>
+    private const double OneFrame = 0.034;
+
+    /// <summary>
+    /// Black runs: [first black picture, first picture after it). A run cut off by either end of
+    /// what was decoded has an unknown end on that side and is only used for the other one.
+    /// </summary>
+    private static List<(double Start, double End, bool StartKnown, bool EndKnown)> Runs(IReadOnlyList<(double T, double Luma, double Scene)> frames)
+    {
+        var runs = new List<(double Start, double End, bool StartKnown, bool EndKnown)>();
+        int? runFrom = null;
+        for (var i = 0; i < frames.Count; i++)
+        {
+            var isBlack = frames[i].Luma < BlackLuma;
+            if (isBlack && runFrom is null)
+            {
+                runFrom = i;
+            }
+            else if (!isBlack && runFrom is { } from)
+            {
+                runs.Add((frames[from].T, frames[i].T, from > 0, true));
+                runFrom = null;
+            }
+        }
+
+        if (runFrom is { } open)
+        {
+            runs.Add((frames[open].T, frames[^1].T, open > 0, false));
+        }
+
+        return runs;
+    }
+
+    /// <summary>The black run's pictures [<paramref name="start"/>, <paramref name="end"/>) that are keyframes, as the frames' own times.</summary>
+    private static List<double> KeyframesIn(IReadOnlyList<(double T, double Luma, double Scene)> frames, double start, double end, IReadOnlyList<double> keyframes) =>
+        frames
+            .Where(f => f.T >= start - SamePicture && f.T < end - SamePicture && f.Luma < BlackLuma
+                && keyframes.Any(k => Math.Abs(k - f.T) <= SamePicture))
+            .Select(f => f.T)
+            .ToList();
 
     /// <summary>The black runs (first black picture, first picture after it) from <paramref name="from"/> to <paramref name="to"/>, by the same test as the edges.</summary>
     public static async Task<IReadOnlyList<(double Start, double End)>> BlackRunsAsync(
