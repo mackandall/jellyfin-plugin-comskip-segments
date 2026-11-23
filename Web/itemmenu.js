@@ -5,6 +5,8 @@
  *      "Scanning for commercials…" (disabled) while a scan runs
  *   2. "Fix opening/closing audio format" (audiotrim-apply)
  *   3. "Find program start" (comskip-program-start): a remembered channel card
+ * On a show, season or other folder only the scan is offered, saying how many videos it
+ * covers ("Scan all 8 episodes for commercials"); the other two work on one file.
  *
  * Injected into jellyfin-web's index.html (see Web/install-overlay.sh, same mechanism
  * as the playback overlay). jellyfin-web has no plugin extension point for the item
@@ -436,6 +438,39 @@
     return entries;
   }
 
+  // A show, season or other folder: what's under it (the scan entry acts on all of it), or null
+  // for a single recording. The audio-format fix and program start only work on one file, and
+  // can cut it, so a folder doesn't offer them.
+  function folderInfo(itemId) {
+    var apiClient = window.ApiClient;
+    var userId = apiClient.getCurrentUserId();
+    return apiClient.getItem(userId, itemId).then(function (item) {
+      if (!item || !item.IsFolder) {
+        return null;
+      }
+      return apiClient.getItems(userId, {
+        ParentId: itemId,
+        Recursive: true,
+        IncludeItemTypes: 'Episode,Movie,Video',
+        IsMissing: false,
+        Limit: 0
+      }).then(function (r) {
+        return { type: item.Type, count: (r && r.TotalRecordCount) || 0 };
+      });
+    }).catch(function () { return null; });
+  }
+
+  function folderEntries(folder) {
+    if (folder.count === 0) {
+      return [];
+    }
+    var noun = folder.type === 'Series' || folder.type === 'Season'
+      ? (folder.count === 1 ? 'episode' : 'episodes')
+      : (folder.count === 1 ? 'video' : 'videos');
+    var label = folder.count === 1 ? 'Scan its one ' + noun + ' for commercials' : 'Scan all ' + folder.count + ' ' + noun + ' for commercials';
+    return [{ dataId: 'comskip-scan', icon: 'content_cut', label: label, run: runComskipScan }];
+  }
+
   function tryInject(scroller) {
     var itemId = getMenuItemId();
     if (!itemId) {
@@ -446,8 +481,13 @@
       if (!canEdit) {
         return null;
       }
-      return Promise.all([comskipStatus(itemId), cutFor(itemId), programStartStatus(itemId)]).then(function (r) {
-        return r[1] ? cuttingEntries(r[1]) : [commercialsEntry(r[0])].concat(MENU_ITEMS.slice(1), programStartEntries(r[2]));
+      return folderInfo(itemId).then(function (folder) {
+        if (folder) {
+          return folderEntries(folder);
+        }
+        return Promise.all([comskipStatus(itemId), cutFor(itemId), programStartStatus(itemId)]).then(function (r) {
+          return r[1] ? cuttingEntries(r[1]) : [commercialsEntry(r[0])].concat(MENU_ITEMS.slice(1), programStartEntries(r[2]));
+        });
       });
     }).then(function (entries) {
       if (!entries || scroller.querySelector('[data-id^="comskip-"]')) {
