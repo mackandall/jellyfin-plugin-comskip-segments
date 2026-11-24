@@ -231,8 +231,10 @@ public static class BreakLearning
             var ends = anchor.End is { } a1 ? new[] { a1 } : cuts;
             Span? best = null;
             var bestScore = double.MinValue;
+            var foundAt = PatternSlack[^1];
             foreach (var slack in PatternSlack)
             {
+                foundAt = slack;
                 foreach (var start in starts)
                 {
                     if (j.AtStart ? start > 0.5 : start < j.StartMin - slack || start > j.StartMax + slack || start < after - 0.5)
@@ -282,7 +284,9 @@ public static class BreakLearning
             {
                 var skipped = spans
                     .Where(x => x.Start >= after - 0.5 && x.End <= chosen.Start + 0.5
-                        && x.Start >= j.StartMin - PatternSlack[^1] && x.Start <= j.StartMax + PatternSlack[^1]
+                        // Within the reach the break was found at: from the widest, Comskip's own
+                        // false break 2 min early beat the right one (Into the Badlands S02E03, 2026-11-23).
+                        && x.Start >= j.StartMin - foundAt && x.Start <= j.StartMax + foundAt
                         && x.Length >= j.LengthMin - PatternLengthSlack && x.Length <= j.LengthMax + PatternLengthSlack
                         && Cover(x, ads) >= PatternMinCover)
                     .OrderBy(x => x.Start)

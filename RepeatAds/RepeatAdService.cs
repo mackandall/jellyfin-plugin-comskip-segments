@@ -553,7 +553,10 @@ public sealed class RepeatAdService
     /// </summary>
     private (List<Junction> Junctions, List<EditedEpisode> Episodes)? Pattern(List<EditedEpisode> alike)
     {
-        var group = alike.GroupBy(e => e.Breaks.Count).OrderByDescending(g => g.Count()).FirstOrDefault();
+        // Counted without a few seconds of padding marked at the very end: some edits mark it, some
+        // don't, and the same show then split into "6 breaks" and "7 breaks" with no pattern at all
+        // (Into the Badlands, 3 and 3 of 7, 2026-11-23).
+        var group = alike.Select(WithoutEndPadding).GroupBy(e => e.Breaks.Count).OrderByDescending(g => g.Count()).FirstOrDefault();
         if (group is null || group.Key == 0 || group.Count() < PatternEpisodes || group.Count() * 3 < alike.Count * 2)
         {
             return null;
@@ -573,6 +576,14 @@ public sealed class RepeatAdService
 
         return (result, eps);
     }
+
+    /// <summary>A break this short reaching the end is padding marked there, not a break of the show's pattern.</summary>
+    private const double EndPaddingSeconds = 30;
+
+    private static EditedEpisode WithoutEndPadding(EditedEpisode e) =>
+        e.Breaks.Count > 1 && e.Breaks[^1].End > e.Seconds - 5 && e.Breaks[^1].Length < EndPaddingSeconds
+            ? e with { Breaks = e.Breaks.Take(e.Breaks.Count - 1).ToList() }
+            : e;
 
     /// <summary>The pattern's break edges pinned by the sound at them in its episodes (see <see cref="EdgeAnchors"/>).</summary>
     private List<EdgeAnchor>? Anchors(uint[] fp, (List<Junction> Junctions, List<EditedEpisode> Episodes) pattern)
