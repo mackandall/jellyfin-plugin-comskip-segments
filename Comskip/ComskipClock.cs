@@ -81,7 +81,7 @@ public static class ComskipClock
     public static IReadOnlyList<ComskipPiece>? Shift(IReadOnlyList<ComskipPiece>? pieces, double offset) =>
         pieces is null || offset == 0
             ? pieces
-            : pieces.Select(p => new ComskipPiece(p.IsCommercial, p.Start + offset, p.End + offset)).ToList();
+            : pieces.Select(p => p with { Start = p.Start + offset, End = p.End + offset }).ToList();
 
     /// <summary>The time (on the stream's own clock) of the first video picture that decodes; null when there's none.</summary>
     private static async Task<double?> FirstPictureAsync(string ffprobePath, string path, CancellationToken ct)

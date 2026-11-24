@@ -199,6 +199,12 @@ public static class BreakLearning
     private const double PatternMinCover = 0.5;
 
     /// <summary>
+    /// Black at a cut, seconds, for it to count as a break edge on black: the show's own edges had
+    /// 0.2–4.8 s, the cuts inside ads Comskip mistook for edges 0.1 s or less (Into the Badlands S02E03).
+    /// </summary>
+    private const double PatternBlackSeconds = 0.15;
+
+    /// <summary>
     /// Fits the show's break pattern (see <see cref="Junction"/>): for each of its breaks, the start
     /// and end among Comskip's cut points (where it found black frames or silence) near where your
     /// edited episodes have it, as long as yours are, and most covered by ad (Comskip's, heard
@@ -216,6 +222,12 @@ public static class BreakLearning
         recordingSeconds = Math.Max(recordingSeconds, pieces.Max(p => p.End));
         var cuts = pieces.SelectMany(p => new[] { p.Start, p.End }).Append(0).Append(recordingSeconds)
             .Where(t => t >= 0 && t <= recordingSeconds + 0.5).Distinct().OrderBy(t => t).ToArray();
+        var blackCuts = pieces
+            .SelectMany(p => new[] { (T: p.Start, Black: p.BlackAtStart), (T: p.End, Black: p.BlackAtEnd) })
+            .Where(c => c.Black >= PatternBlackSeconds)
+            .Select(c => c.T)
+            .ToArray();
+        bool OnBlack(double t) => blackCuts.Any(c => Math.Abs(c - t) < 0.05);
         var result = new List<Span>();
         var unplaced = new List<Span>();
         // The pattern's breaks come in order: each is looked for after the last one placed, so two
@@ -229,52 +241,75 @@ public static class BreakLearning
             // An edge pinned by the sound at it (see EdgeAnchors) is the edge; the other is searched for.
             var starts = anchor.Start is { } a0 ? new[] { a0 } : cuts;
             var ends = anchor.End is { } a1 ? new[] { a1 } : cuts;
-            Span? best = null;
-            var bestScore = double.MinValue;
-            var foundAt = PatternSlack[^1];
-            foreach (var slack in PatternSlack)
+            // Breaks with black at both edges first, nearest first; where none fits, any (a channel
+            // that doesn't put black at its breaks). Comskip also cuts where an ad's sound or scene
+            // changes, and a break running from one of those into the next ad (no black either side)
+            // beat the right one by length (Into the Badlands S02E03, 2026-11-23).
+            var (best, foundAt) = Search(true);
+            if (best is null)
             {
-                foundAt = slack;
-                foreach (var start in starts)
-                {
-                    if (j.AtStart ? start > 0.5 : start < j.StartMin - slack || start > j.StartMax + slack || start < after - 0.5)
-                    {
-                        continue;
-                    }
+                (best, foundAt) = Search(false);
+            }
 
-                    foreach (var end in ends)
+            (Span? Best, double FoundAt) Search(bool onBlack)
+            {
+                Span? best = null;
+                var bestScore = double.MinValue;
+                foreach (var slack in PatternSlack)
+                {
+                    foreach (var start in starts)
                     {
-                        var len = (j.AtEnd ? recordingSeconds : end) - start;
-                        if ((j.AtEnd && end < recordingSeconds - 0.5) || len < j.LengthMin - PatternLengthSlack || len > j.LengthMax + PatternLengthSlack)
+                        if (onBlack && anchor.Start is null && !j.AtStart && !OnBlack(start))
                         {
                             continue;
                         }
 
-                        var span = new Span(start, j.AtEnd ? recordingSeconds : end);
-                        var cover = Cover(span, ads);
-                        if (cover < PatternMinCover)
+                        if (j.AtStart ? start > 0.5 : start < j.StartMin - slack || start > j.StartMax + slack || start < after - 0.5)
                         {
                             continue;
                         }
 
-                        // Ad taken in, less show taken in (seconds), and a pull to the usual length. Ad only
-                        // Comskip saw counts for less than ad heard elsewhere: Comskip often runs a break
-                        // into the show (or the show into a break) by up to half a minute.
-                        var heardInside = Cover(span, heard) * len;
-                        var adInside = heardInside + PatternComskipWeight * (cover * len - heardInside);
-                        var score = (2 * adInside - len) - Math.Abs(len - j.LengthMedian) * PatternLengthPull;
-                        if (score > bestScore)
+                        foreach (var end in ends)
                         {
-                            best = span;
-                            bestScore = score;
+                            var len = (j.AtEnd ? recordingSeconds : end) - start;
+                            if ((j.AtEnd && end < recordingSeconds - 0.5) || len < j.LengthMin - PatternLengthSlack || len > j.LengthMax + PatternLengthSlack)
+                            {
+                                continue;
+                            }
+
+                            if (onBlack && anchor.End is null && !j.AtEnd && !OnBlack(end))
+                            {
+                                continue;
+                            }
+
+                            var span = new Span(start, j.AtEnd ? recordingSeconds : end);
+                            var cover = Cover(span, ads);
+                            if (cover < PatternMinCover)
+                            {
+                                continue;
+                            }
+
+                            // Ad taken in, less show taken in (seconds), and a pull to the usual length. Ad only
+                            // Comskip saw counts for less than ad heard elsewhere: Comskip often runs a break
+                            // into the show (or the show into a break) by up to half a minute.
+                            var heardInside = Cover(span, heard) * len;
+                            var adInside = heardInside + PatternComskipWeight * (cover * len - heardInside);
+                            var score = (2 * adInside - len) - Math.Abs(len - j.LengthMedian) * PatternLengthPull;
+                            if (score > bestScore)
+                            {
+                                best = span;
+                                bestScore = score;
+                            }
                         }
+                    }
+
+                    if (best is not null)
+                    {
+                        return (best, slack);
                     }
                 }
 
-                if (best is not null)
-                {
-                    break;
-                }
+                return (null, PatternSlack[^1]);
             }
 
             // Don't skip a break: one already found between the last placed break and this one, that
