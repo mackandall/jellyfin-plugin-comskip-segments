@@ -228,6 +228,8 @@ public static class BreakLearning
             .Select(c => c.T)
             .ToArray();
         bool OnBlack(double t) => blackCuts.Any(c => Math.Abs(c - t) < 0.05);
+        // A found break's edges may have moved off Comskip's cut a little (repeats, snapping).
+        bool NearBlack(double t) => blackCuts.Any(c => Math.Abs(c - t) < 3);
         var result = new List<Span>();
         var unplaced = new List<Span>();
         // The pattern's breaks come in order: each is looked for after the last one placed, so two
@@ -245,6 +247,7 @@ public static class BreakLearning
             // that doesn't put black at its breaks). Comskip also cuts where an ad's sound or scene
             // changes, and a break running from one of those into the next ad (no black either side)
             // beat the right one by length (Into the Badlands S02E03, 2026-11-23).
+            bool InReach(Span x, double slack) => x.Start >= j.StartMin - slack && x.Start <= j.StartMax + slack;
             var (best, foundAt) = Search(true);
             if (best is null)
             {
@@ -319,9 +322,11 @@ public static class BreakLearning
             {
                 var skipped = spans
                     .Where(x => x.Start >= after - 0.5 && x.End <= chosen.Start + 0.5
-                        // Within the reach the break was found at: from the widest, Comskip's own
-                        // false break 2 min early beat the right one (Into the Badlands S02E03, 2026-11-23).
-                        && x.Start >= j.StartMin - foundAt && x.Start <= j.StartMax + foundAt
+                        // Within the reach the break was found at, or the widest for one with black at
+                        // both edges: from the widest, Comskip's own false break 2 min early (no black)
+                        // beat the right one (Into the Badlands S02E03), and from only the found reach a
+                        // real break 27 s outside it went (S02E04, 2026-11-24).
+                        && (InReach(x, foundAt) || (InReach(x, PatternSlack[^1]) && NearBlack(x.Start) && NearBlack(x.End)))
                         && x.Length >= j.LengthMin - PatternLengthSlack && x.Length <= j.LengthMax + PatternLengthSlack
                         && Cover(x, ads) >= PatternMinCover)
                     .OrderBy(x => x.Start)
