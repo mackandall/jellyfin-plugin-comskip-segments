@@ -120,7 +120,7 @@ public sealed class BadgeController : ControllerBase
         {
             try
             {
-                var timers = await liveTv.GetTimers(new TimerQuery(), cancellationToken).ConfigureAwait(false);
+                var timers = await liveTv.GetTimers(new TimerQuery { IsActive = true }, cancellationToken).ConfigureAwait(false);
                 foreach (var timer in timers.Items.Where(t => t.Status == RecordingStatus.InProgress && !string.IsNullOrEmpty(t.ProgramId)))
                 {
                     // Active recordings are keyed by the timer's own id, which the DTO carries

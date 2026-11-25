@@ -31,7 +31,7 @@ public static class ActiveRecordings
         }
 
         var library = services.GetService<ILibraryManager>();
-        var timers = await liveTv.GetTimers(new TimerQuery(), cancellationToken).ConfigureAwait(false);
+        var timers = await liveTv.GetTimers(new TimerQuery { IsActive = true }, cancellationToken).ConfigureAwait(false);
         var active = new List<Active>();
         foreach (var timer in timers.Items.Where(t => t.Status == RecordingStatus.InProgress))
         {
