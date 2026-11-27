@@ -482,7 +482,7 @@ public sealed class DetectionManager : BackgroundService
             SetAsideOtherEdl(item);
         }
 
-        if (TryImportSiblingEdl(item, out _))
+        if (TryImportSiblingEdl(item, out _, takeBackOwn: !force))
         {
             _ = Task.Run(() => PublishAsync(item, forceOverwrite: true, _stoppingToken));
             return EnqueueResult.ImportedEdl;
@@ -604,10 +604,13 @@ public sealed class DetectionManager : BackgroundService
     /// <summary>
     /// If another program (SageTV, Channels DVR, Emby, a standalone Comskip) already left an
     /// .edl beside the video, stores its breaks as this item's result instead of running
-    /// Comskip. An .edl this plugin wrote itself is not "another program's" and is ignored
-    /// here. Does not publish; callers do (or, for the segment provider, return the breaks).
+    /// Comskip. An .edl this plugin wrote itself is taken back only for an item with no result
+    /// yet: a recording moved to another folder (Space's sorting, Move to archive) comes back
+    /// as a new item, and its old result went with the old one (unless
+    /// <paramref name="takeBackOwn"/> is false: a forced scan runs Comskip). Does not publish;
+    /// callers do (or, for the segment provider, return the breaks).
     /// </summary>
-    public bool TryImportSiblingEdl(BaseItem item, out DetectionRecord record)
+    public bool TryImportSiblingEdl(BaseItem item, out DetectionRecord record, bool takeBackOwn = true)
     {
         record = null!;
         if (item is not Video || string.IsNullOrEmpty(item.Path) || !item.IsFileProtocol
@@ -618,9 +621,26 @@ public sealed class DetectionManager : BackgroundService
 
         try
         {
-            if (!File.Exists(edlPath) || _store.IsOwnedEdl(edlPath))
+            if (!File.Exists(edlPath))
             {
                 return false;
+            }
+
+            if (_store.IsOwnedEdl(edlPath))
+            {
+                if (!takeBackOwn || _store.TryGet(item.Id, out _))
+                {
+                    return false;
+                }
+
+                // Our own final breaks, already padded and on the file's clock.
+                var own = EdlParser.Parse(edlPath, 0);
+                record = new DetectionRecord(
+                    own.Count > 0 ? DetectionStatus.Detected : DetectionStatus.NoCommercials,
+                    own, DateTime.UtcNow, DetectionRecord.SourceComskip, ClockOffset: 0);
+                _store.Save(item.Id, record);
+                _logger.LogInformation("Took back this plugin's own .edl beside {Path} (moved here): {Count} break(s)", item.Path, own.Count);
+                return true;
             }
 
             var breaks = EdlParser.Parse(edlPath, Config.PaddingSeconds);
